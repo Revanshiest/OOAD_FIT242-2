@@ -1,0 +1,75 @@
+name: CI for Checkstyle and Test Coverage
+
+env:
+  SOLUTION: 'Game.sln'
+  TESTS: 'Game.Tests/Game.Tests.csproj'
+
+on:
+  pull_request:
+
+permissions:
+  pull-requests: write
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+            dotnet-version: 8.0.x
+      - name: Cache NuGet packages
+        uses: actions/cache@v4
+        with:
+            path: ~/.nuget/packages
+            key: nuget-${{ hashFiles('**/*.csproj', '**/*.sln') }}
+            restore-keys: nuget-
+
+
+      - name: Restore dependencies
+        run: dotnet restore $SOLUTION
+
+      - name: Checkstyle
+        run: dotnet format --verify-no-changes
+
+      - name: Build Project
+        run: dotnet build $SOLUTION --configuration Release
+
+      - name: Run Tests with Code Coverage
+        run: |
+          dotnet test $TESTS \
+            --configuration Release \
+            --no-build \
+            --collect:"XPlat Code Coverage" \
+            --logger trx \
+            --results-directory coverage
+
+      - name: Code Coverage Summary Report
+        uses: irongut/CodeCoverageSummary@v1.3.0
+        with:
+          filename: 'coverage/**/coverage.cobertura.xml'
+          badge: true
+          format: 'markdown'
+          output: 'both'
+          indicators: true
+          threshold: 90
+          fail_below_min: true 
+
+      - name: Add Coverage PR Comment
+        uses: marocchino/sticky-pull-request-comment@v2
+        if: always() 
+        with:
+          recreate: true
+          path: code-coverage-results.md
+
+      - name: Show Coverage Details in Summary
+        if: always()
+        run: |
+          echo "## 📈 Code Coverage Report" >> $GITHUB_STEP_SUMMARY
+          if [ -f code-coverage-results.md ]; then
+            cat code-coverage-results.md >> $GITHUB_STEP_SUMMARY
+          else
+            echo "Отчет о покрытии не был сгенерирован." >> $GITHUB_STEP_SUMMARY
