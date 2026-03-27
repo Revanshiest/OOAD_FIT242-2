@@ -39,7 +39,11 @@ public class Vector
 
     public override bool Equals(object? obj)
     {
-        throw new NotImplementedException();
+        if (obj is Vector other)
+        {
+            return Coordinates.SequenceEqual(other.Coordinates);
+        }
+        return false;
     }
 
     public override int GetHashCode()
