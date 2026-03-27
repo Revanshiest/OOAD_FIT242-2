@@ -34,7 +34,7 @@ public class Vector
 
     public static bool operator !=(Vector a, Vector b)
     {
-        throw new NotImplementedException();
+        return !(a == b);
     }
 
     public override bool Equals(object? obj)
