@@ -48,6 +48,6 @@ public class Vector
 
     public override int GetHashCode()
     {
-        throw new NotImplementedException();
+        return Coordinates.Aggregate(17, (current, item) => current * 31 + item);
     }
 }
