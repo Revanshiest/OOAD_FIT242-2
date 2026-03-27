@@ -10,8 +10,19 @@ public class Vector
     }
 
     public static Vector operator +(Vector a, Vector b)
-    {
-        throw new NotImplementedException();
+    {   
+        if (a.Coordinates.Length != b.Coordinates.Length)
+        {
+            throw new ArgumentException("Vectors must be of the same length.");
+        }
+
+        int[] ResultCoordinates = new int[a.Coordinates.Length];
+        for (int i = 0; i < a.Coordinates.Length; i++)
+        {
+            ResultCoordinates[i] = a.Coordinates[i] + b.Coordinates[i];
+        }
+
+        return new Vector(ResultCoordinates);
     }
 
     public static bool operator ==(Vector a, Vector b)
