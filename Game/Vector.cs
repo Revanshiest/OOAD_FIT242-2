@@ -10,7 +10,7 @@ public class Vector
     }
 
     public static Vector operator +(Vector a, Vector b)
-    {   
+    {
         if (a.Coordinates.Length != b.Coordinates.Length)
         {
             throw new ArgumentException("Vectors must be of the same length.");
