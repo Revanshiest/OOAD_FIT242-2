@@ -27,8 +27,6 @@ public class Vector
 
     public static bool operator ==(Vector a, Vector b)
     {
-        if (ReferenceEquals(a, b)) return true;
-        if (ReferenceEquals(a, null) || ReferenceEquals(b, null)) return false;
         return a.Coordinates.SequenceEqual(b.Coordinates);
     }
 
