@@ -6,7 +6,7 @@ namespace Game.Tests;
 public class VectorTest
 {
     [Fact]
-    public void Add_Vectors_CorrectSum() // при сложении веткоров (1, -1, 2) и (-1, 1, -2) получается вектор (0,0,0)
+    public void Add_Vectors_CorrectSum()
     {
         Vector v1 = new Vector(new int[] { 1, -1, 2 });
         Vector v2 = new Vector(new int[] { -1, 1, -2 });
@@ -18,7 +18,7 @@ public class VectorTest
     }
 
     [Fact]
-    public void Add_Vectors_DifferentLength_ThrowsArgumentException() // при сложении векторов (1, 2, 3) И (1, 2) выбрасывается исключение ArgumentException
+    public void Add_Vectors_DifferentLength_ThrowsArgumentException()
     {
         Vector v1 = new Vector(new int[] { 1, 2, 3 });
         Vector v2 = new Vector(new int[] { 1, 2 });
@@ -28,7 +28,7 @@ public class VectorTest
     }
 
     [Fact]
-    public void Add_Vectors_DifferentLength_ThrowsArgumentException2() // при сложении векторов (1, 2) И (1, 2, 3) выбрасывается исключение ArgumentException
+    public void Add_Vectors_DifferentLength_ThrowsArgumentException2()
     {
         Vector v1 = new Vector(new int[] { 1, 2 });
         Vector v2 = new Vector(new int[] { 1, 2, 3 });
@@ -38,7 +38,7 @@ public class VectorTest
     }
 
     [Fact]
-    public void Equals_SameCoordinates_DifferentObjects_ReturnsTrue() // два покоординатно совпадающих вектора, но разных объекта, равны между собой при сравнении через метод Equals.
+    public void Equals_SameCoordinates_DifferentObjects_ReturnsTrue()
     {
         Vector v1 = new Vector(new int[] { 1, 2 });
         Vector v2 = new Vector(new int[] { 1, 2 });
@@ -47,7 +47,7 @@ public class VectorTest
     }
 
     [Fact]
-    public void EqualsOperator_SameCoordinates_DifferentObjects_ReturnsTrue() // два покоординатно совпадающих вектора, но разных объекта, равны между собой при сравнении через метод ==
+    public void EqualsOperator_SameCoordinates_DifferentObjects_ReturnsTrue()
     {
         Vector v1 = new Vector(new int[] { 1, 2 });
         Vector v2 = new Vector(new int[] { 1, 2 });
@@ -56,7 +56,7 @@ public class VectorTest
     }
 
     [Fact]
-    public void Equals_SameLengthDifferentCoordinates_ReturnsFalse() // два покоординатно несовпадающих вектора, неравны между собой при сравнении через метод Equals
+    public void Equals_SameLengthDifferentCoordinates_ReturnsFalse()
     {
         Vector v1 = new Vector(new int[] { 1, 2 });
         Vector v2 = new Vector(new int[] { 2, 3 });
@@ -65,7 +65,7 @@ public class VectorTest
     }
 
     [Fact]
-    public void NotEqualsOperator_DifferentCoordinates_ReturnsTrue() // два покоординатно несовпадающих вектора, неравны между собой при сравнении через метод !=
+    public void NotEqualsOperator_DifferentCoordinates_ReturnsTrue()
     {
         Vector v1 = new Vector(new int[] { 1, 2 });
         Vector v2 = new Vector(new int[] { 2, 3 });
@@ -74,7 +74,7 @@ public class VectorTest
     }
 
     [Fact]
-    public void GetHashCode_ReturnsUniqueHashCode() // проверяет наличие хэш-кода у вектора
+    public void GetHashCode_ReturnsUniqueHashCode()
     {
         Vector v1 = new Vector(new int[] { 1, 2 });
         int hashCode = v1.GetHashCode();
