@@ -1,11 +1,10 @@
-namespace Game.Test;
+namespace Game.Tests;
+using Xunit;
+using System;
+using Moq;
 
-public class MoveCommandTest
+public class MoveCommandTests()
 {
-<<<<<<< HEAD
-
-}
-=======
     [Fact]
     public void GoodExecute_MovesObjectCorrectly()
     {
@@ -72,4 +71,3 @@ public class MoveCommandTest
         Assert.Throws<InvalidOperationException>(() => cmd.Execute());
     }
 }
->>>>>>> 91780d0 (refactor: last line)
