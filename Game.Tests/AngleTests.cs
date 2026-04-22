@@ -26,6 +26,38 @@ public class AngleTest
     }
 
     [Fact]
+    public void TestEqualityOperatorBothNull()
+    {
+        Angle? a = null;
+        Angle? b = null;
+        Assert.True(a == b);
+    }
+
+    [Fact]
+    public void TestEqualityOperatorLeftNull()
+    {
+        Angle? a = null;
+        var b = new Angle(5);
+        Assert.False(a == b);
+    }
+
+    [Fact]
+    public void TestEqualityOperatorRightNull()
+    {
+        var a = new Angle(5);
+        Angle? b = null;
+        Assert.False(a == b);
+    }
+
+    [Fact]
+    public void TestInequalityOperatorBothNull()
+    {
+        Angle? a = null;
+        Angle? b = null;
+        Assert.False(a != b);
+    }
+
+    [Fact]
     public void TestEqualsForUnequalAngles()
     {
         var a = new Angle(1);
