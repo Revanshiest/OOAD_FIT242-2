@@ -3,7 +3,7 @@ namespace Game.Test;
 public class MoveCommandTest
 {
 <<<<<<< HEAD
-    
+
 }
 =======
     [Fact]
