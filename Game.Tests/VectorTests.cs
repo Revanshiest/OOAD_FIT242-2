@@ -80,4 +80,38 @@ public class VectorTest
         int hashCode = v1.GetHashCode();
         Assert.NotEqual(0, hashCode);
     }
+
+    [Fact]
+    public void EqualsOperator_BothNull_ReturnsTrue()
+    {
+        Vector v1 = null;
+        Vector v2 = null;
+
+        Assert.True(v1 == v2);
+    }
+
+    [Fact]
+    public void EqualsOperator_OneNull_ReturnsFalse()
+    {
+        Vector v1 = new Vector(new int[] { 1, 2 });
+        Vector v2 = null;
+
+        Assert.False(v1 == v2);
+    }
+
+    [Fact]
+    public void Equals_Null_ReturnsFalse()
+    {
+        Vector v1 = new Vector(new int[] { 1, 2 });
+
+        Assert.False(v1.Equals(null));
+    }
+
+    [Fact]
+    public void Equals_DifferentType_ReturnsFalse()
+    {
+        Vector v1 = new Vector(new int[] { 1, 2 });
+
+        Assert.False(v1.Equals("not a vector"));
+    }
 }
