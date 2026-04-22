@@ -33,7 +33,7 @@ public class Angle
 
     public static bool operator !=(Angle? a, Angle? b)
     {
-        return !(a==b);
+        return !(a == b);
     }
 
     public bool Equals(Angle? other)
