@@ -32,6 +32,8 @@
   <Reference Include="scopes">
     <HintPath>..\Common\scopes.dll</HintPath>
   </Reference>
+  <Using Include="App" />
+  <Using Include="App.Scopes" />
 </ItemGroup>
 
 </Project>
