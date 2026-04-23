@@ -35,4 +35,18 @@ public class SendCommandTests
         Assert.Equal("recipient is busy", exception.Message);
         receiverMock.Verify(r => r.Receive(It.IsAny<ICommand>()), Times.Never);
     }
+
+    [Fact]
+    public void SendCommand_Constructor_Throws_When_Command_Is_Null()
+    {
+        var receiverMock = new Mock<IMessageReceiver>();
+        Assert.Throws<ArgumentNullException>(() => new SendCommand(null, receiverMock.Object));
+    }
+
+    [Fact]
+    public void SendCommand_Constructor_Throws_When_Receiver_Is_Null()
+    {
+        var commandMock = new Mock<ICommand>();
+        Assert.Throws<ArgumentNullException>(() => new SendCommand(commandMock.Object, null));
+    }
 }
