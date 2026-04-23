@@ -11,7 +11,7 @@ public class RegisterIoCDependencyMoveCommand : ICommand
             var obj = args[0];
 
             var adapter = Ioc.Resolve<object>("Adapters.IMovingObject", obj);
-            
+
             return new MoveCommand((IMovingObject)adapter);
         };
 
