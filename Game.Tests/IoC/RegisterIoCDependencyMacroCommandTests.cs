@@ -18,7 +18,7 @@ public class RegisterIoCDependencyMacroCommandTests
         var mockCommand2 = new Mock<ICommand>().Object;
 
         var commandsToExecute = new ICommand[] { mockCommand1, mockCommand2 };
-        
+
         var registerMacroCmd = new RegisterIoCDependencyMacroCommand();
 
         registerMacroCmd.Execute();
