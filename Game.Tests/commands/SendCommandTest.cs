@@ -1,4 +1,5 @@
 namespace Game.Tests;
+
 using Moq;
 using Xunit;
 

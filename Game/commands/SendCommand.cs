@@ -11,7 +11,7 @@ public class SendCommand : ICommand
         _receiver = receiver ?? throw new ArgumentNullException(nameof(receiver));
     }
 
-     public void Execute()
+    public void Execute()
     {
         if (!_receiver.CanAccept(_command))
         {
