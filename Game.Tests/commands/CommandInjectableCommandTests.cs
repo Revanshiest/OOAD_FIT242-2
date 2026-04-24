@@ -13,7 +13,7 @@ namespace Game.Tests
 
             injectable.Inject(mockCommand.Object);
             injectable.Execute();
-            
+
             mockCommand.Verify(c => c.Execute(), Times.Once);
         }
 
