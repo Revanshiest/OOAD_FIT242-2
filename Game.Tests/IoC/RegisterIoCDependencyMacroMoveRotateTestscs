@@ -61,4 +61,11 @@ public class RegisterIoCDependencyMacroMoveRotateTests
         rotateCmd1.Verify(c => c.Execute(), Times.Once);
         rotateCmd2.Verify(c => c.Execute(), Times.Once);
     }
+
+    [Fact]
+    public void Resolve_Throws_When_SpecificationNotFound()
+    {
+        new RegisterIoCDependencyMacroMoveRotate().Execute();
+        Assert.Throws<Exception>(() => Ioc.Resolve<ICommand>("Macro.Move"));
+    }
 }
