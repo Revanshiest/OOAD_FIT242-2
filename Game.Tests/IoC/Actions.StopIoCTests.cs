@@ -16,14 +16,13 @@ namespace Game.Tests.IoC
         [Fact]
         public void Execute_RegistersActionsStop_ResolvesSuccessfully()
         {
-            // Arrange
             new RegisterIoCDependencyActionsStop().Execute();
             var mockOrder = new Mock<IDictionary<string, object>>();
 
-            // Act
-            var actionStop = Ioc.Resolve<ICommand>("Actions.Stop", mockOrder.Object);
 
-            // Assert
+            var actionStop = Ioc.Resolve<ICommand>("Actions.Stop", mockOrder.Object);
+            actionStop.Execute();
+
             Assert.NotNull(actionStop);
             Assert.IsType<EmptyCommand>(actionStop);
         }
