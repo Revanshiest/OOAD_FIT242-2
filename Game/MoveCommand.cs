@@ -1,4 +1,5 @@
 namespace Game;
+
 using App;
 public class MoveCommand(IMovingObject movingObject) : ICommand
 {
