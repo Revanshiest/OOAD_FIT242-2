@@ -6,4 +6,3 @@ public class RotateCommand(IRotatable rotatableObject) : ICommand
         rotatableObject.Angle += rotatableObject.AngleVelocity;
     }
 }
-
