@@ -1,14 +1,8 @@
-public class RotateCommand : ICommand
+using App;
+public class RotateCommand(IRotatable rotatableObject) : ICommand
 {
-    private IRotatable Obj;
-
-    public RotateCommand(IRotatable obj)
-    {
-        this.Obj = obj;
-    }
-
     public void Execute()
     {
-        Obj.Angle += Obj.AngleVelocity;
+        rotatableObject.Angle += rotatableObject.AngleVelocity;
     }
 }
