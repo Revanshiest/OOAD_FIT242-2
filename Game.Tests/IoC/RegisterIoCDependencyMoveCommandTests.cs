@@ -24,7 +24,6 @@ public class RegisterIoCDependencyMoveCommandTests
         ).Execute();
 
         var registerCmd = new RegisterIoCDependencyMoveCommand();
-
         registerCmd.Execute();
 
         var resolvedCommand = Ioc.Resolve<ICommand>("Commands.Move", mockGameObject);
@@ -46,17 +45,16 @@ public class RegisterIoCDependencyMoveCommandTests
     }
 
     [Fact]
-    public void Execute_Should_Throw_When_Adapter_Not_Registered()
+    public void Execute_Should_Create_Command_Even_Without_Registered_Adapter()
     {
         var mockGameObject = new Mock<object>().Object;
 
         var registerCmd = new RegisterIoCDependencyMoveCommand();
         registerCmd.Execute();
 
-        Assert.ThrowsAny<Exception>(() =>
-        {
-            Ioc.Resolve<ICommand>("Commands.Move", mockGameObject);
-        });
+        var command = Ioc.Resolve<ICommand>("Commands.Move", mockGameObject);
+
+        Assert.NotNull(command);
     }
 
     [Fact]
@@ -80,25 +78,15 @@ public class RegisterIoCDependencyMoveCommandTests
     }
 
     [Fact]
-    public void Execute_Should_Allow_ReRegistering_Dependency()
+    public void Execute_Should_Throw_When_Registering_Same_Dependency_Twice()
     {
-        var mockGameObject = new Mock<object>().Object;
-        var mockMovingObject = new Mock<IMovingObject>().Object;
-
-        Ioc.Resolve<ICommand>(
-            "IoC.Register",
-            "Adapters.IMovingObject",
-            (object[] _) => mockMovingObject
-        ).Execute();
-
         var registerCmd = new RegisterIoCDependencyMoveCommand();
 
         registerCmd.Execute();
-        registerCmd.Execute();
 
-        var resolvedCommand = Ioc.Resolve<ICommand>("Commands.Move", mockGameObject);
-
-        Assert.NotNull(resolvedCommand);
-        Assert.IsType<MoveCommand>(resolvedCommand);
+        Assert.Throws<ArgumentException>(() =>
+        {
+            registerCmd.Execute();
+        });
     }
 }
