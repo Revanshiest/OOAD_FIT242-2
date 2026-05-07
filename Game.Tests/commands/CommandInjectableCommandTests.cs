@@ -24,5 +24,14 @@ namespace Game.Tests
             var ex = Assert.Throws<InvalidOperationException>(() => injectable.Execute());
             Assert.Equal("Command not injected", ex.Message);
         }
+        [Fact]
+        public void Inject_Throws_When_Command_Is_Null()
+        {
+            var injectable = new CommandInjectableCommand();
+
+            Assert.Throws<ArgumentNullException>(() =>
+                injectable.Inject(null!)
+            );
+        }
     }
 }
