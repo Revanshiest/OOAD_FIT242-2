@@ -21,7 +21,8 @@ namespace Game.Tests
         public void Execute_ThrowsException_WhenCommandNotInjected()
         {
             var injectable = new CommandInjectableCommand();
-            var ex = Assert.Throws<NullReferenceException>(() => injectable.Execute());
+            var ex = Assert.Throws<InvalidOperationException>(() => injectable.Execute());
+            Assert.Equal("Command not injected", ex.Message);
         }
     }
 }
