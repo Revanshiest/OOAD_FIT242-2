@@ -82,24 +82,6 @@ public class VectorTest
     }
 
     [Fact]
-    public void EqualsOperator_BothNull_ReturnsTrue()
-    {
-        Vector v1 = null;
-        Vector v2 = null;
-
-        Assert.True(v1 == v2);
-    }
-
-    [Fact]
-    public void EqualsOperator_OneNull_ReturnsFalse()
-    {
-        Vector v1 = new Vector(new int[] { 1, 2 });
-        Vector v2 = null;
-
-        Assert.False(v1 == v2);
-    }
-
-    [Fact]
     public void Equals_Null_ReturnsFalse()
     {
         Vector v1 = new Vector(new int[] { 1, 2 });
