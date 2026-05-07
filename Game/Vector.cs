@@ -9,21 +9,11 @@ public class Vector
         this.Coordinates = Coordinates;
     }
 
-    public static Vector operator +(Vector a, Vector b)
-    {
-        if (a.Coordinates.Length != b.Coordinates.Length)
-        {
-            throw new ArgumentException("Vectors must be of the same length.");
-        }
-
-        int[] ResultCoordinates = new int[a.Coordinates.Length];
-        for (int i = 0; i < a.Coordinates.Length; i++)
-        {
-            ResultCoordinates[i] = a.Coordinates[i] + b.Coordinates[i];
-        }
-
-        return new Vector(ResultCoordinates);
-    }
+    public static Vector operator +(Vector a, Vector b) =>
+    
+    a.Coordinates.Length == b.Coordinates.Length
+        ? new Vector(a.Coordinates.Zip(b.Coordinates, (x, y) => x + y).ToArray())
+        : throw new ArgumentException("Vectors must be of the same length.");
 
     public static bool operator ==(Vector a, Vector b)
     {
