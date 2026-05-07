@@ -10,7 +10,7 @@ public class Vector
     }
 
     public static Vector operator +(Vector a, Vector b) =>
-    
+
     a.Coordinates.Length == b.Coordinates.Length
         ? new Vector(a.Coordinates.Zip(b.Coordinates, (x, y) => x + y).ToArray())
         : throw new ArgumentException("Vectors must be of the same length.");
