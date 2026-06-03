@@ -18,7 +18,7 @@ public class RegisterIoCDependencyActionsStartTests
         new RegisterIoCDependencyActionsStart().Execute();
         var mockOrder = new Mock<IDictionary<string, object>>();
 
-        var actionStart = Ioc.Resolve<ICommand>("Actions.Start", mockOrder.Object);
+        var actionStart = Ioc.Resolve<ICommand>("Actions.Start", mockOrder.Object, "Move");
 
         Assert.NotNull(actionStart);
         Assert.IsAssignableFrom<ICommand>(actionStart);
