@@ -17,14 +17,23 @@ namespace Game.Tests.IoC
         public void Execute_RegistersActionsStop_ResolvesSuccessfully()
         {
             new RegisterIoCDependencyActionsStop().Execute();
-            var mockOrder = new Mock<IDictionary<string, object>>();
+            var gameObject = new Dictionary<string, object>();
+            var injectable = new CommandInjectableCommand();
+            gameObject["repeatableMove"] = injectable;
+            var order = new Dictionary<string, object>
+            {
+                ["GameObject"] = gameObject,
+                ["CmdType"] = "Move"
+            };
 
-
-            var actionStop = Ioc.Resolve<ICommand>("Actions.Stop", mockOrder.Object);
-            actionStop.Execute();
+            var actionStop = Ioc.Resolve<ICommand>("Actions.Stop", order);
 
             Assert.NotNull(actionStop);
-            Assert.IsType<EmptyCommand>(actionStop);
+            Assert.IsType<StopCommand>(actionStop);
+            actionStop.Execute();
+
+            var exception = Record.Exception(() => injectable.Execute());
+            Assert.Null(exception);
         }
     }
 }
