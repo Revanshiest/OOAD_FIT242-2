@@ -33,5 +33,12 @@ namespace Game.Tests
                 injectable.Inject(null!)
             );
         }
+
+        [Fact]
+        public void Inject_ThrowsException_WhenCommandIsNull()
+        {
+            var injectable = new CommandInjectableCommand();
+            Assert.Throws<ArgumentNullException>(() => injectable.Inject(null!));
+        }
     }
 }
