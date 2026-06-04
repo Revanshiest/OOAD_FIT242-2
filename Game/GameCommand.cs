@@ -14,6 +14,7 @@ public class GameCommand : ICommand
 
     public void Execute()
     {
+        var playerId = (string)_order["PlayerId"];
         var gameObjectId = (string)_order["GameObjectId"];
         var cmdType = (string)_order["CmdType"];
 
@@ -21,6 +22,7 @@ public class GameCommand : ICommand
         var gameObject = repository.Get(gameObjectId);
 
         var action = Ioc.Resolve<ICommand>($"Actions.{cmdType}", gameObject, cmdType);
-        action.Execute();
+        var authorizedAction = new CheckAuthorizationCommand(playerId, gameObjectId, action);
+        authorizedAction.Execute();
     }
 }
