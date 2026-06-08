@@ -13,6 +13,9 @@ public class GameCommandTests
         new InitCommand().Execute();
         var testScope = Ioc.Resolve<object>("IoC.Scope.Create");
         Ioc.Resolve<ICommand>("IoC.Scope.Current.Set", testScope).Execute();
+
+        Ioc.Resolve<ICommand>("IoC.Register", "Auth.Check",
+            (object[] args) => new EmptyCommand()).Execute();
     }
 
     [Fact]
@@ -36,6 +39,7 @@ public class GameCommandTests
 
         var order = new Dictionary<string, object>
         {
+            { "PlayerId", "player1" },
             { "GameObjectId", "ship1" },
             { "CmdType", "Shoot" }
         };
@@ -68,6 +72,7 @@ public class GameCommandTests
 
         var order = new Dictionary<string, object>
         {
+            { "PlayerId", "player1" },
             { "GameObjectId", "ship2" },
             { "CmdType", "Start" }
         };
@@ -90,6 +95,7 @@ public class GameCommandTests
 
         var order = new Dictionary<string, object>
         {
+            { "PlayerId", "player1" },
             { "GameObjectId", "unknown" },
             { "CmdType", "Shoot" }
         };
