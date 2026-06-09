@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using Game;
 
 public class DetectCollisionCommand : ICommand
@@ -14,30 +15,15 @@ public class DetectCollisionCommand : ICommand
 
     public void Execute()
     {
-        Vector deltaPosition = SubstractVectors(_leftObject.Position, _rightObject.Position);
-        Vector deltaVelocity = SubstractVectors(_leftObject.Velocity, _rightObject.Velocity);
+        Vector deltaPosition = Ioc.Resolve<Vector>("Math.Vector.Subtract", _leftObject.Position, _rightObject.Position);
+        Vector deltaVelocity = Ioc.Resolve<Vector>("Math.Vector.Subtract", _leftObject.Velocity, _rightObject.Velocity);
 
         bool isCollided = Ioc.Resolve<bool>("Game.Collision.Check", deltaPosition, deltaVelocity);
 
-        if (isCollided)
+        new Dictionary<bool, Action>
         {
-            Ioc.Resolve<ICommand>("Game.Collision.Event", _leftObject, _rightObject).Execute();
-        }
-    }
-
-    private Vector SubstractVectors(Vector v1, Vector v2)
-    {
-        if (v1.Coordinates.Length != v2.Coordinates.Length)
-        {
-            throw new ArgumentException("Векторы должны быть одинаковой размерности.");
-        }
-
-        int[] deltaCoords = new int[v1.Coordinates.Length];
-        for (int i = 0; i < v1.Coordinates.Length; i++)
-        {
-            deltaCoords[i] = v1.Coordinates[i] - v2.Coordinates[i];
-        }
-
-        return new Vector(deltaCoords);
+            { true, () => Ioc.Resolve<ICommand>("Game.Collision.Event", _leftObject, _rightObject).Execute() },
+            { false, () => { } }
+        }[isCollided]();
     }
 }
