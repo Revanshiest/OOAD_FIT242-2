@@ -2,47 +2,48 @@ using System.Reflection;
 
 namespace Game.AdapterGenerator;
 
-public class AdapterGenerator : IAdapterGenerator
+public sealed class AdapterGenerator : IAdapterGenerator
 {
-    private readonly ICommandScanner _scanner;
+    private readonly ICommandScanner _commandScanner;
     private readonly IAdapterSourceBuilder _sourceBuilder;
-    private readonly IAdapterCompiler _compiler;
-    private readonly IDependencyRegistrar _registrar;
-    private readonly IReadOnlyList<Assembly> _assemblies;
+    private readonly IAdapterCompiler _adapterCompiler;
+    private readonly IDependencyRegistrar _dependencyRegistrar;
+    private readonly IReadOnlyList<Assembly> _sourceAssemblies;
 
     public AdapterGenerator(
-        ICommandScanner scanner,
+        ICommandScanner commandScanner,
         IAdapterSourceBuilder sourceBuilder,
-        IAdapterCompiler compiler,
-        IDependencyRegistrar registrar,
-        IEnumerable<Assembly> assemblies)
+        IAdapterCompiler adapterCompiler,
+        IDependencyRegistrar dependencyRegistrar,
+        IEnumerable<Assembly> sourceAssemblies)
     {
-        _scanner = scanner;
+        _commandScanner = commandScanner;
         _sourceBuilder = sourceBuilder;
-        _compiler = compiler;
-        _registrar = registrar;
-        _assemblies = assemblies.ToList();
+        _adapterCompiler = adapterCompiler;
+        _dependencyRegistrar = dependencyRegistrar;
+        _sourceAssemblies = sourceAssemblies.ToList();
     }
 
     public void GenerateAndRegister()
     {
-        var commands = _scanner.Scan(_assemblies);
+        var scannedCommands = _commandScanner.Scan(_sourceAssemblies);
 
-        foreach (var command in commands)
-        {
-            var adapterType = GenerateAdapter(command);
-            _registrar.RegisterAdapter(command, adapterType);
-            _registrar.RegisterCommand(command);
-        }
+        scannedCommands
+            .Select(command => (Command: command, AdapterType: GenerateAdapterType(command)))
+            .ToList()
+            .ForEach(registration =>
+            {
+                _dependencyRegistrar.RegisterAdapter(registration.Command, registration.AdapterType);
+                _dependencyRegistrar.RegisterCommand(registration.Command);
+            });
     }
 
-    private Type GenerateAdapter(CommandMetadata metadata)
+    private Type GenerateAdapterType(CommandMetadata metadata)
     {
-        var sourceCode = _sourceBuilder.BuildAdapterSource(metadata);
-        var compiledAssembly = _compiler.Compile(sourceCode, _assemblies);
+        var adapterSourceCode = _sourceBuilder.BuildAdapterSource(metadata);
+        var compiledAssembly = _adapterCompiler.Compile(adapterSourceCode, _sourceAssemblies);
 
         return compiledAssembly.GetType(metadata.AdapterClassName)
-            ?? throw new InvalidOperationException(
-                $"Скомпилированный тип '{metadata.AdapterClassName}' не найден в сборке.");
+            ?? throw new InvalidOperationException($"Compiled adapter type '{metadata.AdapterClassName}' was not found in the generated assembly.");
     }
 }

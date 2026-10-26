@@ -1,12 +1,13 @@
+using System.Collections.Frozen;
 using System.Reflection;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 
 namespace Game.AdapterGenerator;
 
-public class RoslynAdapterCompiler : IAdapterCompiler
+public sealed class RoslynAdapterCompiler : IAdapterCompiler
 {
-    private static readonly HashSet<string> RequiredRuntimeAssemblies = new()
+    private static readonly FrozenSet<string> RequiredRuntimeAssemblies = new[]
     {
         "System.Runtime",
         "System.Collections",
@@ -14,7 +15,7 @@ public class RoslynAdapterCompiler : IAdapterCompiler
         "System.Private.CoreLib",
         "netstandard",
         "System.ObjectModel"
-    };
+    }.ToFrozenSet();
 
     public Assembly Compile(string sourceCode, IEnumerable<Assembly> sourceAssemblies)
     {
@@ -47,16 +48,17 @@ public class RoslynAdapterCompiler : IAdapterCompiler
     private static Assembly LoadAssemblyFromStream(MemoryStream stream)
     {
         stream.Seek(0, SeekOrigin.Begin);
+
         return Assembly.Load(stream.ToArray());
     }
 
     private static string FormatCompilationErrors(IEnumerable<Diagnostic> diagnostics, string sourceCode)
     {
         var errors = diagnostics
-            .Where(d => d.Severity == DiagnosticSeverity.Error)
-            .Select(d => d.ToString());
+            .Where(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error)
+            .Select(diagnostic => diagnostic.ToString());
 
-        return $"Ошибка компиляции адаптера:\n{string.Join("\n", errors)}\n\nИсходный код:\n{sourceCode}";
+        return $"Adapter compilation failed:\n{string.Join("\n", errors)}\n\nSource code:\n{sourceCode}";
     }
 
     private static List<MetadataReference> CollectReferences(IEnumerable<Assembly> sourceAssemblies)

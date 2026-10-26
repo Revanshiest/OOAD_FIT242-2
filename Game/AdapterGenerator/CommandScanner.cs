@@ -2,9 +2,9 @@ using System.Reflection;
 
 namespace Game.AdapterGenerator;
 
-public class CommandScanner : ICommandScanner
+public sealed class CommandScanner : ICommandScanner
 {
-    private static readonly Type _commandInterfaceType = typeof(ICommand);
+    private static readonly Type CommandInterfaceType = typeof(ICommand);
 
     public IReadOnlyList<CommandMetadata> Scan(IEnumerable<Assembly> assemblies)
     {
@@ -13,10 +13,10 @@ public class CommandScanner : ICommandScanner
             .Where(IsValidCommandType)
             .SelectMany(type =>
                 FindInterfaceParameterConstructors(type)
-                    .Select(ctor => new CommandMetadata(
+                    .Select(constructor => new CommandMetadata(
                         type,
-                        ctor.GetParameters()[0].ParameterType,
-                        ctor)))
+                        constructor.GetParameters()[0].ParameterType,
+                        constructor)))
             .ToList();
     }
 
@@ -26,9 +26,9 @@ public class CommandScanner : ICommandScanner
         {
             return assembly.GetExportedTypes();
         }
-        catch (ReflectionTypeLoadException ex)
+        catch (ReflectionTypeLoadException exception)
         {
-            return ex.Types.OfType<Type>().ToArray();
+            return exception.Types.OfType<Type>().ToArray();
         }
     }
 
@@ -37,13 +37,13 @@ public class CommandScanner : ICommandScanner
         return type.IsClass
             && !type.IsAbstract
             && type.Name.EndsWith("Command")
-            && _commandInterfaceType.IsAssignableFrom(type);
+            && CommandInterfaceType.IsAssignableFrom(type);
     }
 
     private static IEnumerable<ConstructorInfo> FindInterfaceParameterConstructors(Type type)
     {
         return type.GetConstructors(BindingFlags.Public | BindingFlags.Instance)
-            .Where(ctor => ctor.GetParameters() is [var param] && param.ParameterType.IsInterface)
+            .Where(constructor => constructor.GetParameters() is [var parameter] && parameter.ParameterType.IsInterface)
             .Take(1);
     }
 }

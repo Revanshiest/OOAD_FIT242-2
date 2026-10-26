@@ -69,7 +69,7 @@ flowchart TB
 
 | Правило | Пример |
 |---------|--------|
-| Имя зависимости команды | `Commands.Game_MoveCommand` |
+| Имя зависимости команды | `Commands.Game_Commands_MoveCommand` |
 | Имя зависимости адаптера | `Adapters.Game_IMovingObjectAdapter` |
 | Имя класса адаптера | `Game_IMovingObjectAdapter` |
 
@@ -118,7 +118,7 @@ var assemblies = new[] { typeof(MoveCommand).Assembly };
 new RegisterIoCDependencyAdapterGenerator(assemblies).Execute();
 
 // После этого можно резолвить команды:
-var command = Ioc.Resolve<ICommand>("Commands.Game_MoveCommand", gameObject);
+var command = Ioc.Resolve<ICommand>("Commands.Game_Commands_MoveCommand", gameObject);
 command.Execute();
 ```
 
