@@ -1,7 +1,8 @@
+using System.Reflection;
 using Game;
 using Game.AdapterGenerator;
-using Moq;
-using System.Reflection;
+using Game.Commands;
+using Game.IoC;
 using Xunit;
 
 namespace Game.Tests;

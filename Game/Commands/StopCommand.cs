@@ -1,5 +1,4 @@
-using System;
-using Game;
+namespace Game.Commands;
 
 public class StopCommand : ICommand
 {

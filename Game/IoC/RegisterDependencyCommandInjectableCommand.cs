@@ -1,3 +1,7 @@
+using Game.Commands;
+
+namespace Game.IoC;
+
 public class RegisterDependencyCommandInjectableCommand : ICommand
 {
     public void Execute()

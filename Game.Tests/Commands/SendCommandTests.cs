@@ -1,7 +1,9 @@
-namespace Game.Tests;
-
+using Game;
+using Game.Commands;
 using Moq;
 using Xunit;
+
+namespace Game.Tests;
 
 public class SendCommandTests
 {

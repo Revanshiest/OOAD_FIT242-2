@@ -1,6 +1,10 @@
+using Game;
+using Game.Commands;
 using Moq;
 
-public class RotateTest
+namespace Game.Tests;
+
+public class RotateTests
 {
     [Fact]
     public void TestNormalRotation()

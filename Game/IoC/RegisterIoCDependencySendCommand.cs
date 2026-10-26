@@ -1,4 +1,6 @@
-namespace Game;
+using Game.Commands;
+
+namespace Game.IoC;
 
 public class RegisterIoCDependencySendCommand : ICommand
 {

@@ -1,5 +1,11 @@
-public class AngleTest
+using Game;
+
+namespace Game.Tests;
+
+public class AngleTests
 {
+    private const double Precision = 1e-5;
+
     [Fact]
     public void TestAdditionProducesCorrectAngle()
     {
@@ -139,7 +145,6 @@ public class AngleTest
 
         Assert.Equal(Math.PI, radians, precision: 5);
     }
-    private const double Precision = 1e-5;
 
     [Fact]
     public void Cos_ReturnsOne_ForZeroAngle()

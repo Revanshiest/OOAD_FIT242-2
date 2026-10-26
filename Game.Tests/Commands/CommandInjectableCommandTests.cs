@@ -1,3 +1,5 @@
+using Game;
+using Game.Commands;
 using Moq;
 using Xunit;
 

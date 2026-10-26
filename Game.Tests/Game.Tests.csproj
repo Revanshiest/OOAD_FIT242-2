@@ -27,6 +27,9 @@
     <ProjectReference Include="..\Game\Game.csproj" />
   </ItemGroup>
   <ItemGroup>
+    <None Include="xunit.runner.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+  <ItemGroup>
   <Reference Include="core">
     <HintPath>..\Common\core.dll</HintPath>
   </Reference>

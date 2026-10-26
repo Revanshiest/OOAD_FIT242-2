@@ -1,5 +1,6 @@
-using App;
-using App.Scopes;
+using Game.Commands;
+
+namespace Game.IoC;
 
 public class RegisterIoCDependencyRotateCommand : ICommand
 {
@@ -23,4 +24,3 @@ public class RegisterIoCDependencyRotateCommand : ICommand
         registerCommand.Execute();
     }
 }
-

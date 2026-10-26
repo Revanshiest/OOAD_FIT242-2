@@ -1,9 +1,8 @@
-using Xunit;
-using System;
+using Game;
 
 namespace Game.Tests;
 
-public class VectorTest
+public class VectorTests
 {
     [Fact]
     public void Add_Vectors_CorrectSum()
@@ -74,7 +73,7 @@ public class VectorTest
     }
 
     [Fact]
-    public void GetHashCode_ReturnsUniqueHashCode()
+    public void GetHashCode_ReturnsNonZero()
     {
         Vector v1 = new Vector(new int[] { 1, 2 });
         int hashCode = v1.GetHashCode();

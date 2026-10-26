@@ -2,6 +2,6 @@ namespace Game;
 
 public interface IMessageReceiver
 {
-    public void Receive(ICommand cmd);
+    void Receive(ICommand command);
     bool CanAccept(ICommand command);
 }

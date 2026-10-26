@@ -1,6 +1,6 @@
-using App;
-using App.Scopes;
-using Game;
+using Game.Commands;
+
+namespace Game.IoC;
 
 public class RegisterIoCDependencyMoveCommand : ICommand
 {

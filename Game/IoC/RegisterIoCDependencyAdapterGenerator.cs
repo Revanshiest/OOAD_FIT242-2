@@ -1,7 +1,7 @@
 using System.Reflection;
 using Game.AdapterGenerator;
 
-namespace Game;
+namespace Game.IoC;
 
 public class RegisterIoCDependencyAdapterGenerator : ICommand
 {
@@ -14,7 +14,7 @@ public class RegisterIoCDependencyAdapterGenerator : ICommand
 
     public void Execute()
     {
-        var generator = new AdapterGenerator.AdapterGenerator(
+        var generator = new Game.AdapterGenerator.AdapterGenerator(
             new CommandScanner(),
             new AdapterSourceBuilder(),
             new RoslynAdapterCompiler(),

@@ -1,6 +1,4 @@
-using System;
-using System.Collections.Generic;
-using Game;
+namespace Game.Commands;
 
 public class StartCommand : ICommand
 {

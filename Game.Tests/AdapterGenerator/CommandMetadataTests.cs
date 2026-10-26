@@ -1,5 +1,6 @@
 using Game;
 using Game.AdapterGenerator;
+using Game.Commands;
 using Xunit;
 
 namespace Game.Tests;
@@ -12,7 +13,7 @@ public class CommandMetadataTests
         var constructor = typeof(MoveCommand).GetConstructors()[0];
         var metadata = new CommandMetadata(typeof(MoveCommand), typeof(IMovingObject), constructor);
 
-        Assert.Equal("Commands.Game_MoveCommand", metadata.CommandDependencyKey);
+        Assert.Equal("Commands.Game_Commands_MoveCommand", metadata.CommandDependencyKey);
     }
 
     [Fact]

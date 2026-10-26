@@ -1,3 +1,5 @@
+namespace Game;
+
 public class Angle
 {
     private static int denominator = 8;

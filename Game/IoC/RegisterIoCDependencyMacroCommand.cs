@@ -1,5 +1,6 @@
-using App;
-using App.Scopes;
+using Game.Commands;
+
+namespace Game.IoC;
 
 public class RegisterIoCDependencyMacroCommand : ICommand
 {

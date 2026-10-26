@@ -1,3 +1,7 @@
+using Game.Commands;
+
+namespace Game.IoC;
+
 public class RegisterIoCDependencyActionsStop : ICommand
 {
     public void Execute()

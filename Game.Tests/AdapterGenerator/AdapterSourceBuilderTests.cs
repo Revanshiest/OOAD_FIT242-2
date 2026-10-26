@@ -1,5 +1,6 @@
 using Game;
 using Game.AdapterGenerator;
+using Game.Commands;
 using Xunit;
 
 namespace Game.Tests;

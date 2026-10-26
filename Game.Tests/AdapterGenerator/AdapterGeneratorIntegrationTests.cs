@@ -1,7 +1,9 @@
+using System.Reflection;
 using Game;
 using Game.AdapterGenerator;
+using Game.Commands;
+using Game.IoC;
 using Moq;
-using System.Reflection;
 using Xunit;
 
 namespace Game.Tests;
@@ -10,9 +12,7 @@ public class AdapterGeneratorIntegrationTests
 {
     public AdapterGeneratorIntegrationTests()
     {
-        new InitCommand().Execute();
-        var testScope = Ioc.Resolve<object>("IoC.Scope.Create");
-        Ioc.Resolve<ICommand>("IoC.Scope.Current.Set", testScope).Execute();
+        IoCTestScope.Initialize();
     }
 
     [Fact]

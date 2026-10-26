@@ -1,4 +1,4 @@
-namespace Game;
+namespace Game.Commands;
 
 public class MoveCommand(IMovingObject movingObject) : ICommand
 {

@@ -1,4 +1,4 @@
-namespace Game;
+namespace Game.IoC;
 
 public class RegisterIoCDependencyGameObjectRepository : ICommand
 {

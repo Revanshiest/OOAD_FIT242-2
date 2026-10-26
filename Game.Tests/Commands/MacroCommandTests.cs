@@ -1,11 +1,11 @@
-using Xunit;
-using System;
-using Moq;
 using Game;
+using Game.Commands;
+using Moq;
+using Xunit;
 
 namespace Game.Tests;
 
-public class MacroCommandTests()
+public class MacroCommandTests
 {
     [Fact]
     public void MacroCommand_ExecutesAllCommands()

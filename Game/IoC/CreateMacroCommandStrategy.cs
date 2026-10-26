@@ -1,3 +1,5 @@
+namespace Game.IoC;
+
 public class CreateMacroCommandStrategy
 {
     private string spec;
@@ -6,6 +8,7 @@ public class CreateMacroCommandStrategy
     {
         spec = commandSpec;
     }
+
     public ICommand Resolve(object[] args)
     {
         string[] commandsNames = Ioc.Resolve<string[]>(spec);

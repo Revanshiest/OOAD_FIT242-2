@@ -1,3 +1,7 @@
+using Game.Commands;
+
+namespace Game.IoC;
+
 public class RegisterIoCDependencyActionsStart : ICommand
 {
     public void Execute()
@@ -10,7 +14,6 @@ public class RegisterIoCDependencyActionsStart : ICommand
 
                 return new StartCommand(gameObject, cmdType);
             }
-
         ).Execute();
     }
 }

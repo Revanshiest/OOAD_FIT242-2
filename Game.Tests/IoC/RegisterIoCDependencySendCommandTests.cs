@@ -1,17 +1,16 @@
-namespace Game.Tests;
-
-using App;
-using App.Scopes;
+using Game;
+using Game.IoC;
+using Game.Commands;
 using Moq;
 using Xunit;
+
+namespace Game.Tests;
 
 public class RegisterIoCDependencySendCommandTests
 {
     public RegisterIoCDependencySendCommandTests()
     {
-        new InitCommand().Execute();
-        var testScope = Ioc.Resolve<object>("IoC.Scope.Create");
-        Ioc.Resolve<ICommand>("IoC.Scope.Current.Set", testScope).Execute();
+        IoCTestScope.Initialize();
     }
 
     [Fact]

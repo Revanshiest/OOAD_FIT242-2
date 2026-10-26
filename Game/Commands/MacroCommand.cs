@@ -1,3 +1,5 @@
+namespace Game.Commands;
+
 public class MacroCommand : ICommand
 {
     private readonly ICommand[] _commands;
