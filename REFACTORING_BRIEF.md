@@ -1,8 +1,8 @@
 # REFACTORING_BRIEF
 
-Операционный бриф для рефакторинга этого репозитория по эвристикам AGENTS.md. Прочитай полностью до первого изменения кода.
+Операционный бриф репозитория OOAD_FIT242-2. Зафиксирован полный рефакторинг по эвристикам AGENTS.md (октябрь 2026). Документ сохраняет команды верификации, ограничения и итоговое состояние.
 
-## 1. Команды верификации (весь цикл выполняется локально, без настройки окружения)
+## 1. Команды верификации
 
 | Действие | Команда |
 |----------|---------|
@@ -12,52 +12,35 @@
 | Проверка форматирования (шаг Checkstyle в CI) | `dotnet format --verify-no-changes` |
 | Покрытие | `dotnet test Game.Tests/Game.Tests.csproj --configuration Release --no-build --collect:"XPlat Code Coverage" --results-directory coverage` |
 
-SDK закреплён через `global.json` (10.0.300, rollForward latestFeature). TargetFramework: net10.0. Тестовый стек: xUnit 2.9.2, Moq 4.20.72.
+SDK закреплён через `global.json` (10.0.300, rollForward latestFeature). TargetFramework: net10.0. Тестовый стек: xUnit 2.9.2, Moq 4.20.72. Тесты выполняются последовательно (`xunit.runner.json`, `parallelizeTestCollections: false`) — IoC-контейнер внешних DLL является глобальным статическим состоянием, параллельные коллекции делают прогоны недетерминированными.
 
-## 2. Baseline (зафиксирован 2026-10-25)
+## 2. Метрики
 
-- Сборка: успешна, 2 предупреждения CS8625 (`Game.Tests/commands/SendCommandTest.cs`, строки 42 и 49 — null в non-nullable ссылочный тип).
-- Тесты: 97 из 97 проходят.
-- `dotnet format --verify-no-changes`: отклонений нет.
-- Покрытие: строк 96,27%, ветвей 85,41%. Порог CI — 90% по строкам с `fail_below_min: true`: при падении ниже 90% CI краснеет.
-- Класс без покрытия: `Game.RegisterIoCDependencyGameObjectRepository` (0 из 5 строк) — единственная «дыра».
+| Метрика | До рефакторинга | После рефакторинга |
+|---------|-----------------|--------------------|
+| Сборка | 2 предупреждения CS8625 | 0 предупреждений |
+| Тесты | 97 (с недетерминированными падениями на параллельных коллекциях) | 108, детерминированные |
+| `dotnet format --verify-no-changes` | чисто | чисто |
+| Покрытие строк | 96,27% | 97,4%+ |
+| Классы без покрытия | RegisterIoCDependencyGameObjectRepository (0%) | нет |
 
-## 3. Исправлено в подготовке (не чинить повторно)
+## 3. Выполненные этапы (атомарные коммиты в порядке следования)
 
-1. Коллизия регистров путей: в индексе были `Game.Tests/IoC/RegisterIoCDependencySendCommandTests.cs` и `Game.Tests/Ioc/RegisterIoCDependencySendCommandTests.cs` с идентичным содержимым; на Windows второй файл не выгружался из-за коллизии. Дубль `Ioc/` удалён, коммит `52ca664`. Корректный путь — `Game.Tests/IoC/`.
-2. CI падал на шаге «Build Project»: workflow ставил .NET SDK 8.0.x при target net10.0 (ошибка NETSDK1045). Версия поднята до 10.0.x и добавлен `global.json`, коммит `23542df`. Локально вся цепочка (restore, format, build, test) зелёная; после пуша CI должен позеленеть.
+1. Гигиена: файл `IMassageReciever.cs` переименован в `IMessageReceiver.cs` по имени типа, тестовые папки слиты, исключение SendCommand переформулировано (`Message receiver is busy`), дубликат null-теста удалён, предупреждения nullable устранены.
+2. Структура: команды в `Game/Commands` (namespace `Game.Commands`), регистрации в `Game.IoC`, доменные интерфейсы в `Game`, имена файлов равны именам типов, общая фикстура `IoCTestScope`, единый `namespace Game.Tests`, последовательный запуск тестовых коллекций.
+3. Value-типы: `Vector` и `Angle` — иммутабельные sealed-типы; мутабельное статическое поле `Angle.denominator` заменено константой, координаты `Vector` копируются защитно, реализованы `IEquatable<T>`, добавлены граничные тесты.
+4. IoC-слой: guard clauses через `StrategyArguments.Get`, строковые ключи вынесены в `IocDependencyKeys`, удалены лишние касты в `StartCommand`, все классы sealed.
+5. Генератор адаптеров: `AdapterSourceBuilder` переписан декларативным LINQ-конвейером, генерируемый код — sealed-классы с primary constructor, `FrozenSet` в компиляторе, сообщения инфраструктуры на английском, тесты и `adapter_generator_architecture.md` синхронизированы.
+6. Покрытие: тесты на `RegisterIoCDependencyGameObjectRepository` и ветку ошибки компиляции адаптера.
 
-## 4. Жёсткие ограничения
+## 4. Жёсткие ограничения (актуальны для любых последующих изменений)
 
-1. `Common/core.dll` и `Common/scopes.dll` — внешние сборки курса (namespace `App`, `App.Scopes`; типы `Ioc`, `InitCommand`, скоупы, `ICommand`). Это чёрные ящики: не рефакторить, не заменять, API считать фиксированным контрактом.
-2. Строковые ключи IoC, приходящие извне (`IoC.Register`, `IoC.Scope.Create`, `IoC.Scope.Current.Set`, `Game.CommandsReceiver`, `Actions.StartIoC`, `Actions.StopIoC`), переименовывать нельзя. Ключи, объявленные внутри репозитория (`Commands.Move`, `Commands.Rotate`, `Commands.Send`, `Adapters.IMovingObject`, `Properties.Position`, `Macro.Move`, `Macro.Rotate`, `Specs.Move`, `Specs.Rotate`, `Repository.GameObject`, `Commands.Game_MoveCommand`, `Adapters.Game_IMovingObjectAdapter`), — межкомпонентный контракт: менять только синхронно по всему коду и тестам.
-3. Поведение, зафиксированное тестами (например, `IndexOutOfRangeException` при `Ioc.Resolve<ICommand>("Commands.Move")` без аргументов в `RegisterIoCDependencyMoveCommandTests`), менять только осознанно, с правкой теста в том же коммите.
-4. CI должен оставаться зелёным: `dotnet format --verify-no-changes`, успешная сборка, тесты, покрытие строк не ниже 90%.
-5. При изменении контрактов генератора адаптеров обнови `adapter_generator_architecture.md` (описывает пайплайн и правила именования ключей).
+1. `Common/core.dll` и `Common/scopes.dll` — внешние сборки курса (namespace `App`, `App.Scopes`; типы `Ioc`, `InitCommand`, скоупы, `ICommand`). Чёрные ящики: не рефакторить, не заменять, API считать фиксированным контрактом.
+2. Строковые ключи IoC, приходящие извне (`IoC.Register`, `IoC.Scope.Create`, `IoC.Scope.Current.Set`, `Game.CommandsReceiver`), переименовывать нельзя. Ключи репозитория объявлены константами в `Game/IocDependencyKeys.cs` и должны меняться только там.
+3. Регистрации в скоупах DLL накапливаются по цепочке тестов одного класса — поведение тестов зависит от порядка их выполнения; новые тесты должны быть самодостаточными и не полагаться на регистрации из других тестов.
+4. Конструктор `MacroCommand` принимает `ICommand[]`: параметр-интерфейс (`IReadOnlyList<ICommand>`) попадает под критерии `CommandScanner` и ломает генерацию адаптеров.
+5. CI должен оставаться зелёным: `dotnet format --verify-no-changes`, сборка, тесты, покрытие строк не ниже 90%.
 
-## 5. Точки рефакторинга (выявлены при подготовке)
+## 5. Состояние git
 
-| Место | Проблема |
-|-------|----------|
-| `Game/IMassageReciever.cs` | Имя файла с двойной опечаткой, внутри объявлен интерфейс `IMessageReceiver`. Переименовать файл в `IMessageReceiver.cs` — санкционировано |
-| `Game/Angle.cs` | Мутабельная `private static int denominator` (разделяемое изменяемое состояние), `Numerator` с `private set`, выражение `% denominator` дублируется |
-| `Game/Vector.cs` | Параметр конструктора с заглавной буквы (`int[] Coordinates`), внутренний `int[]` мутабелен, нет защитных проверок на пустой/нулевой вход |
-| `Game/IoC/RegisterIoCDependencyMoveCommand.cs` | Небезопасный каст `(IMovingObject)adapter`, обращение `args[0]` без guard clause |
-| `Game/IoC/RegisterIoCDependencyGameObjectRepository.cs` | 0% покрытия тестами |
-| `Game.Tests/commandTests/` и `Game.Tests/commands/` | Две папки тестов команд с дублирующим назначением — слить в `commands` |
-| `Game.Tests/commands/SendCommandTest.cs:42,49` | Предупреждения CS8625 (nullability) |
-| `Game/AdapterGenerator/AdapterSourceBuilder.cs`, `AdapterGenerator.cs` | `foreach` и пошаговое накопление — по разделу 8 AGENTS.md подлежит LINQ-конвейерам; `StringBuilder` — инфраструктура генерации кода, а не доменное состояние, применять правило с границей из самих эвристик |
-
-## 6. Рекомендуемый порядок работы
-
-1. Гигиена: переименование `IMassageReciever.cs`, слияние тестовых папок, устранение CS8625. Атомарный коммит, тесты после каждого шага.
-2. Value-типы: `Vector` и `Angle` — иммутабельность (раздел 8), покрытие граничных классов эквивалентности (T1, T5).
-3. IoC-регистрации: guard clauses (G3), вынос строковых ключей в именованные константы (G25), устранение небезопасных кастов.
-4. AdapterGenerator: LINQ-ификация, именование.
-5. Дописать тесты на `RegisterIoCDependencyGameObjectRepository` до покрытия.
-
-После каждого шага: `dotnet test`, `dotnet format --verify-no-changes`; коммитить атомарно, не смешивать этапы.
-
-## 7. Состояние git
-
-Подготовительные коммиты (`52ca664`, `23542df`, коммит с AGENTS.md и этим брифом) сделаны локально в main и не запушены. Автор — временная identity `Vladimir <vladimir@local>`: перед пушем задай реальный email (`git config user.email`) и при необходимости перепиши автора (`git commit --amend --reset-author` на вершине или `git rebase --exec` по трём коммитам).
+Все коммиты локальные, не запушены. Автор — временная identity `Vladimir <vladimir@local>`: перед пушем задать реальный email (`git config user.email`) и переписать автора при необходимости.
