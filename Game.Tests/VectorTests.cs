@@ -43,7 +43,7 @@ public class VectorTests
         var vector = new Vector(new int[] { 1, 2 });
         Vector? nullVector = null;
 
-        Assert.Throws<ArgumentNullException>(() => { var result = nullVector + vector; });
+        Assert.Throws<ArgumentNullException>(() => { var result = nullVector! + vector; });
     }
 
     [Fact]
@@ -52,7 +52,7 @@ public class VectorTests
         var vector = new Vector(new int[] { 1, 2 });
         Vector? nullVector = null;
 
-        Assert.Throws<ArgumentNullException>(() => { var result = vector + nullVector; });
+        Assert.Throws<ArgumentNullException>(() => { var result = vector + nullVector!; });
     }
 
     [Fact]
