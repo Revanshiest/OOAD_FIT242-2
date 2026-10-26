@@ -2,25 +2,18 @@ using Game.Commands;
 
 namespace Game.IoC;
 
-public class RegisterIoCDependencyRotateCommand : ICommand
+public sealed class RegisterIoCDependencyRotateCommand : ICommand
 {
     public void Execute()
     {
-        Func<object[], object> strategy = (object[] args) =>
+        Func<object[], object> strategy = args =>
         {
-            var obj = args[0];
-
-            var adapter = Ioc.Resolve<object>("Adapters.IRotatable", obj);
+            var gameObject = StrategyArguments.Get<object>(args, 0);
+            var adapter = Ioc.Resolve<object>(IocDependencyKeys.RotatableAdapter, gameObject);
 
             return new RotateCommand((IRotatable)adapter);
         };
 
-        var registerCommand = Ioc.Resolve<ICommand>(
-            "IoC.Register",
-            "Commands.Rotate",
-            strategy
-        );
-
-        registerCommand.Execute();
+        Ioc.Resolve<ICommand>(IocDependencyKeys.Register, IocDependencyKeys.RotateCommand, strategy).Execute();
     }
 }

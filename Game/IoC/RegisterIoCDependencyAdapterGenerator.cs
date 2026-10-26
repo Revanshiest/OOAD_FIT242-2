@@ -3,25 +3,24 @@ using Game.AdapterGenerator;
 
 namespace Game.IoC;
 
-public class RegisterIoCDependencyAdapterGenerator : ICommand
+public sealed class RegisterIoCDependencyAdapterGenerator : ICommand
 {
-    private readonly IEnumerable<Assembly> _assemblies;
+    private readonly IReadOnlyList<Assembly> _assemblies;
 
     public RegisterIoCDependencyAdapterGenerator(IEnumerable<Assembly> assemblies)
     {
-        _assemblies = assemblies;
+        _assemblies = assemblies.ToList();
     }
 
     public void Execute()
     {
-        var generator = new Game.AdapterGenerator.AdapterGenerator(
+        var adapterGenerator = new Game.AdapterGenerator.AdapterGenerator(
             new CommandScanner(),
             new AdapterSourceBuilder(),
             new RoslynAdapterCompiler(),
             new IoCDependencyRegistrar(),
-            _assemblies
-        );
+            _assemblies);
 
-        generator.GenerateAndRegister();
+        adapterGenerator.GenerateAndRegister();
     }
 }

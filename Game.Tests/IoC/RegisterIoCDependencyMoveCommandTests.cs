@@ -40,7 +40,7 @@ public class RegisterIoCDependencyMoveCommandTests
         var registerCmd = new RegisterIoCDependencyMoveCommand();
         registerCmd.Execute();
 
-        Assert.Throws<IndexOutOfRangeException>(() =>
+        Assert.Throws<ArgumentException>(() =>
         {
             Ioc.Resolve<ICommand>("Commands.Move");
         });

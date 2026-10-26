@@ -1,6 +1,6 @@
 namespace Game.Commands;
 
-public class CommandInjectableCommand : ICommand, ICommandInjectable
+public sealed class CommandInjectableCommand : ICommand, ICommandInjectable
 {
     private ICommand? _injectedCommand;
 

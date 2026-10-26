@@ -1,6 +1,6 @@
 namespace Game.Commands;
 
-public class SendCommand : ICommand
+public sealed class SendCommand : ICommand
 {
     private readonly ICommand _command;
     private readonly IMessageReceiver _receiver;

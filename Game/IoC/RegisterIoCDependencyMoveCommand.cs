@@ -2,25 +2,18 @@ using Game.Commands;
 
 namespace Game.IoC;
 
-public class RegisterIoCDependencyMoveCommand : ICommand
+public sealed class RegisterIoCDependencyMoveCommand : ICommand
 {
     public void Execute()
     {
-        Func<object[], object> strategy = (object[] args) =>
+        Func<object[], object> strategy = args =>
         {
-            var obj = args[0];
-
-            var adapter = Ioc.Resolve<object>("Adapters.IMovingObject", obj);
+            var gameObject = StrategyArguments.Get<object>(args, 0);
+            var adapter = Ioc.Resolve<object>(IocDependencyKeys.MovingObjectAdapter, gameObject);
 
             return new MoveCommand((IMovingObject)adapter);
         };
 
-        var registerCommand = Ioc.Resolve<ICommand>(
-            "IoC.Register",
-            "Commands.Move",
-            strategy
-        );
-
-        registerCommand.Execute();
+        Ioc.Resolve<ICommand>(IocDependencyKeys.Register, IocDependencyKeys.MoveCommand, strategy).Execute();
     }
 }

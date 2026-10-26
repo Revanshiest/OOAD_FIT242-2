@@ -1,26 +1,27 @@
 namespace Game.Commands;
 
-public class StartCommand : ICommand
+public sealed class StartCommand : ICommand
 {
     private readonly IDictionary<string, object> _gameObject;
-    private readonly string _cmdType;
+    private readonly string _commandType;
 
-    public StartCommand(IDictionary<string, object> gameObject, string cmdType)
+    public StartCommand(IDictionary<string, object> gameObject, string commandType)
     {
         _gameObject = gameObject;
-        _cmdType = cmdType;
+        _commandType = commandType;
     }
 
     public void Execute()
     {
-        var cmd = Ioc.Resolve<ICommand>($"Commands.{_cmdType}", _gameObject);
-        var injectable = (ICommand)Ioc.Resolve<ICommandInjectable>("Commands.CommandInjectable");
-        var receiver = Ioc.Resolve<IMessageReceiver>("Game.CommandsReceiver");
-        var send = new SendCommand(injectable, receiver);
-        var repeatable = Ioc.Resolve<ICommand>($"Macro.{_cmdType}", cmd, send);
-        ((ICommandInjectable)injectable).Inject(repeatable);
-        _gameObject[$"repeatable{_cmdType}"] = injectable;
-        var sendCommand = new SendCommand(repeatable, receiver);
-        sendCommand.Execute();
+        var baseCommand = Ioc.Resolve<ICommand>($"{IocDependencyKeys.CommandsPrefix}{_commandType}", _gameObject);
+        var commandInjectable = Ioc.Resolve<ICommandInjectable>(IocDependencyKeys.CommandInjectable);
+        var messageReceiver = Ioc.Resolve<IMessageReceiver>(IocDependencyKeys.CommandsReceiver);
+        var initialSendCommand = new SendCommand((ICommand)commandInjectable, messageReceiver);
+        var repeatableCommand = Ioc.Resolve<ICommand>($"{IocDependencyKeys.MacroPrefix}{_commandType}", baseCommand, initialSendCommand);
+
+        commandInjectable.Inject(repeatableCommand);
+        _gameObject[$"{IocDependencyKeys.RepeatableCommandPrefix}{_commandType}"] = commandInjectable;
+
+        new SendCommand(repeatableCommand, messageReceiver).Execute();
     }
 }

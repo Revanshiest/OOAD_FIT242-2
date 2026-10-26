@@ -1,8 +1,8 @@
 namespace Game.Commands;
 
-public class MacroCommand : ICommand
+public sealed class MacroCommand : ICommand
 {
-    private readonly ICommand[] _commands;
+    private readonly IReadOnlyList<ICommand> _commands;
 
     public MacroCommand(ICommand[] commands)
     {
@@ -11,6 +11,6 @@ public class MacroCommand : ICommand
 
     public void Execute()
     {
-        _commands.ToList().ForEach(c => c.Execute());
+        _commands.ToList().ForEach(command => command.Execute());
     }
 }

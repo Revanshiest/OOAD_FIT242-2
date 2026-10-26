@@ -1,6 +1,6 @@
 namespace Game.Commands;
 
-public class StopCommand : ICommand
+public sealed class StopCommand : ICommand
 {
     private readonly ICommandInjectable _injectable;
 

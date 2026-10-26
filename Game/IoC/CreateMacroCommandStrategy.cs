@@ -1,19 +1,21 @@
 namespace Game.IoC;
 
-public class CreateMacroCommandStrategy
+public sealed class CreateMacroCommandStrategy
 {
-    private string spec;
+    private readonly string commandSpecification;
 
-    public CreateMacroCommandStrategy(string commandSpec)
+    public CreateMacroCommandStrategy(string commandSpecification)
     {
-        spec = commandSpec;
+        ArgumentNullException.ThrowIfNull(commandSpecification);
+
+        this.commandSpecification = commandSpecification;
     }
 
-    public ICommand Resolve(object[] args)
+    public ICommand Resolve(object[] arguments)
     {
-        string[] commandsNames = Ioc.Resolve<string[]>(spec);
-        var commands = commandsNames.Select(name => Ioc.Resolve<ICommand>(name, args)).ToArray();
+        var commandNames = Ioc.Resolve<string[]>(commandSpecification);
+        var commands = commandNames.Select(name => Ioc.Resolve<ICommand>(name, arguments)).ToArray();
 
-        return Ioc.Resolve<ICommand>("Commands.Macro", new object[] { (object)commands });
+        return Ioc.Resolve<ICommand>(IocDependencyKeys.MacroCommand, new object[] { commands });
     }
 }

@@ -14,6 +14,18 @@ public class RegisterIoCDependencyRotateCommandTests
     }
 
     [Fact]
+    public void Execute_Should_Throw_When_No_Arguments_Provided()
+    {
+        var registerCmd = new RegisterIoCDependencyRotateCommand();
+        registerCmd.Execute();
+
+        Assert.Throws<ArgumentException>(() =>
+        {
+            Ioc.Resolve<ICommand>("Commands.Rotate");
+        });
+    }
+
+    [Fact]
     public void Execute_Should_Register_RotateCommand_Dependency()
     {
         var mockGameObject = new Mock<object>().Object;

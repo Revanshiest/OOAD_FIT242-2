@@ -2,24 +2,14 @@ using Game.Commands;
 
 namespace Game.IoC;
 
-public class RegisterIoCDependencySendCommand : ICommand
+public sealed class RegisterIoCDependencySendCommand : ICommand
 {
     public void Execute()
     {
-        Func<object[], object> strategy = (object[] args) =>
-        {
-            var command = (ICommand)args[0];
-            var receiver = (IMessageReceiver)args[1];
+        Func<object[], object> strategy = args => new SendCommand(
+            StrategyArguments.Get<ICommand>(args, 0),
+            StrategyArguments.Get<IMessageReceiver>(args, 1));
 
-            return new SendCommand(command, receiver);
-        };
-
-        var registerCommand = Ioc.Resolve<ICommand>(
-            "IoC.Register",
-            "Commands.Send",
-            strategy
-        );
-
-        registerCommand.Execute();
+        Ioc.Resolve<ICommand>(IocDependencyKeys.Register, IocDependencyKeys.SendCommand, strategy).Execute();
     }
 }

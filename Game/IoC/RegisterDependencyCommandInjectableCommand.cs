@@ -2,11 +2,11 @@ using Game.Commands;
 
 namespace Game.IoC;
 
-public class RegisterDependencyCommandInjectableCommand : ICommand
+public sealed class RegisterDependencyCommandInjectableCommand : ICommand
 {
     public void Execute()
     {
-        Ioc.Resolve<ICommand>("IoC.Register", "Commands.CommandInjectable",
+        Ioc.Resolve<ICommand>(IocDependencyKeys.Register, IocDependencyKeys.CommandInjectable,
             (object[] args) => new CommandInjectableCommand()).Execute();
     }
 }

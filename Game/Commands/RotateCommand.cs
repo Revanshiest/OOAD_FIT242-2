@@ -1,6 +1,6 @@
 namespace Game.Commands;
 
-public class RotateCommand(IRotatable rotatableObject) : ICommand
+public sealed class RotateCommand(IRotatable rotatableObject) : ICommand
 {
     public void Execute()
     {

@@ -1,8 +1,7 @@
 using System.Collections.Concurrent;
-
 namespace Game;
 
-public class GameObjectRepository : IGameObjectRepository
+public sealed class GameObjectRepository : IGameObjectRepository
 {
     private readonly ConcurrentDictionary<string, IDictionary<string, object>> _objects = new();
 
