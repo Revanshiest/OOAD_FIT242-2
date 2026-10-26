@@ -15,7 +15,7 @@ public class SendCommand : ICommand
     {
         if (!_receiver.CanAccept(_command))
         {
-            throw new InvalidOperationException("recipient is busy");
+            throw new InvalidOperationException("Message receiver is busy");
         }
 
         _receiver.Receive(_command);

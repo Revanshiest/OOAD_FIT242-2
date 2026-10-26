@@ -1,44 +1,37 @@
 using Moq;
 using Xunit;
 
-namespace Game.Tests
+namespace Game.Tests;
+
+public class CommandInjectableCommandTests
 {
-    public class CommandInjectableCommandTests
+    [Fact]
+    public void Execute_InvokesInjectedCommand()
     {
-        [Fact]
-        public void Execute_InvokesInjectedCommand()
-        {
-            var mockCommand = new Mock<ICommand>();
-            var injectable = new CommandInjectableCommand();
+        var commandMock = new Mock<ICommand>();
+        var injectable = new CommandInjectableCommand();
 
-            injectable.Inject(mockCommand.Object);
-            injectable.Execute();
+        injectable.Inject(commandMock.Object);
+        injectable.Execute();
 
-            mockCommand.Verify(c => c.Execute(), Times.Once);
-        }
+        commandMock.Verify(c => c.Execute(), Times.Once);
+    }
 
-        [Fact]
-        public void Execute_ThrowsException_WhenCommandNotInjected()
-        {
-            var injectable = new CommandInjectableCommand();
-            var ex = Assert.Throws<InvalidOperationException>(() => injectable.Execute());
-            Assert.Equal("Command not injected", ex.Message);
-        }
-        [Fact]
-        public void Inject_Throws_When_Command_Is_Null()
-        {
-            var injectable = new CommandInjectableCommand();
+    [Fact]
+    public void Execute_ThrowsInvalidOperationException_WhenCommandIsNotInjected()
+    {
+        var injectable = new CommandInjectableCommand();
 
-            Assert.Throws<ArgumentNullException>(() =>
-                injectable.Inject(null!)
-            );
-        }
+        var exception = Assert.Throws<InvalidOperationException>(() => injectable.Execute());
 
-        [Fact]
-        public void Inject_ThrowsException_WhenCommandIsNull()
-        {
-            var injectable = new CommandInjectableCommand();
-            Assert.Throws<ArgumentNullException>(() => injectable.Inject(null!));
-        }
+        Assert.Equal("Command not injected", exception.Message);
+    }
+
+    [Fact]
+    public void Inject_ThrowsArgumentNullException_WhenCommandIsNull()
+    {
+        var injectable = new CommandInjectableCommand();
+
+        Assert.Throws<ArgumentNullException>(() => injectable.Inject(null!));
     }
 }
