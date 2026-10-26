@@ -85,24 +85,17 @@ using App;
 using Game;
 using System.Collections.Generic;
 
-public class Game_IMovingObjectAdapter : Game.IMovingObject
+public sealed class Game_IMovingObjectAdapter(IDictionary<string, object> item) : Game.IMovingObject
 {
-    private readonly IDictionary<string, object> _item;
-
-    public Game_IMovingObjectAdapter(IDictionary<string, object> item)
-    {
-        _item = item;
-    }
-
     public Game.Vector Position
     {
-        get => Ioc.Resolve<Game.Vector>("Properties.Position", _item);
-        set => Ioc.Resolve<ICommand>("Properties.Position.Set", _item, value).Execute();
+        get => Ioc.Resolve<Game.Vector>("Properties.Position", item);
+        set => Ioc.Resolve<ICommand>("Properties.Position.Set", item, value).Execute();
     }
 
     public Game.Vector Speed
     {
-        get => Ioc.Resolve<Game.Vector>("Properties.Speed", _item);
+        get => Ioc.Resolve<Game.Vector>("Properties.Speed", item);
     }
 }
 ```
