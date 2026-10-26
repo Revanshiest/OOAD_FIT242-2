@@ -43,4 +43,4 @@ SDK закреплён через `global.json` (10.0.300, rollForward latestFea
 
 ## 5. Состояние git
 
-Все коммиты локальные, не запушены. Автор — временная identity `Vladimir <vladimir@local>`: перед пушем задать реальный email (`git config user.email`) и переписать автора при необходимости.
+Коммиты переписаны на identity `BelyyVladimir <181494251+BelyyVladimir@users.noreply.github.com>` и запушены в ветку `refactor/clean-code` (origin). Пунктовое пояснение каждого изменения для команды — в `REFACTORING_REPORT.md`. Слияние в main — через pull request после ревью команды.
