@@ -16,6 +16,54 @@ public class AngleTests
     }
 
     [Fact]
+    public void TestAdditionWrapsAtFullCircle()
+    {
+        var a = new Angle(7);
+        var b = new Angle(7);
+        var result = a + b;
+
+        Assert.Equal(new Angle(6), result);
+    }
+
+    [Fact]
+    public void TestAdditionWithFullCircleAngle_ReturnsSameAngle()
+    {
+        var a = new Angle(8);
+        var b = new Angle(3);
+        var result = a + b;
+
+        Assert.Equal(new Angle(3), result);
+    }
+
+    [Fact]
+    public void TestAdditionWithZeroAngle_ReturnsSameAngle()
+    {
+        var a = new Angle(5);
+        var b = new Angle(0);
+        var result = a + b;
+
+        Assert.Equal(new Angle(5), result);
+    }
+
+    [Fact]
+    public void TestEqualityOperator_AnglesEqualModuloFullCircle()
+    {
+        var a = new Angle(0);
+        var b = new Angle(8);
+
+        Assert.True(a == b);
+    }
+
+    [Fact]
+    public void TestHashCodeEqual_ForAnglesEqualModuloFullCircle()
+    {
+        var a = new Angle(0);
+        var b = new Angle(8);
+
+        Assert.Equal(a.GetHashCode(), b.GetHashCode());
+    }
+
+    [Fact]
     public void TestEqualsForEqualAngles()
     {
         var a = new Angle(15);

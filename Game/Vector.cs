@@ -1,41 +1,36 @@
 namespace Game;
 
-public class Vector
+public sealed class Vector : IEquatable<Vector>
 {
-    public int[] Coordinates { get; }
+    private readonly int[] coordinates;
 
-    public Vector(int[] Coordinates)
+    public Vector(int[] coordinates)
     {
-        this.Coordinates = Coordinates;
+        ArgumentNullException.ThrowIfNull(coordinates);
+
+        this.coordinates = [.. coordinates];
     }
 
-    public static Vector operator +(Vector a, Vector b) =>
-
-    a.Coordinates.Length == b.Coordinates.Length
-        ? new Vector(a.Coordinates.Zip(b.Coordinates, (x, y) => x + y).ToArray())
-        : throw new ArgumentException("Vectors must be of the same length.");
-
-    public static bool operator ==(Vector a, Vector b)
+    public static Vector operator +(Vector left, Vector right)
     {
-        return a.Coordinates.SequenceEqual(b.Coordinates);
+        ArgumentNullException.ThrowIfNull(left);
+        ArgumentNullException.ThrowIfNull(right);
+
+        return left.coordinates.Length == right.coordinates.Length
+            ? new Vector(left.coordinates.Zip(right.coordinates, (leftCoordinate, rightCoordinate) => leftCoordinate + rightCoordinate).ToArray())
+            : throw new ArgumentException("Vectors must be of the same length.");
     }
 
-    public static bool operator !=(Vector a, Vector b)
-    {
-        return !(a == b);
-    }
+    public static bool operator ==(Vector? left, Vector? right) =>
+        left is null ? right is null : left.Equals(right);
 
-    public override bool Equals(object? obj)
-    {
-        if (obj is Vector other)
-        {
-            return Coordinates.SequenceEqual(other.Coordinates);
-        }
-        return false;
-    }
+    public static bool operator !=(Vector? left, Vector? right) => !(left == right);
 
-    public override int GetHashCode()
-    {
-        return Coordinates.Aggregate(17, (current, item) => current * 31 + item);
-    }
+    public bool Equals(Vector? other) =>
+        other is not null && coordinates.SequenceEqual(other.coordinates);
+
+    public override bool Equals(object? obj) => obj is Vector other && Equals(other);
+
+    public override int GetHashCode() =>
+        coordinates.Aggregate(17, (current, coordinate) => current * 31 + coordinate);
 }
