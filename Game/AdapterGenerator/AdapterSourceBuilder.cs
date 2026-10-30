@@ -3,166 +3,110 @@ using System.Text;
 
 namespace Game.AdapterGenerator;
 
-public class AdapterSourceBuilder : IAdapterSourceBuilder
+public sealed class AdapterSourceBuilder : IAdapterSourceBuilder
 {
-    private const string Indent = "    ";
-    private const string DoubleIndent = "        ";
-
     public string BuildAdapterSource(CommandMetadata metadata)
     {
-        var interfaceType = metadata.InterfaceType;
-        var adapterClassName = metadata.AdapterClassName;
+        var sourceLines = CollectImportedNamespaces(metadata.InterfaceType)
+            .Select(namespaceName => $"using {namespaceName};")
+            .Append(string.Empty)
+            .Concat(BuildClassLines(metadata))
+            .Append("}");
 
-        var sb = new StringBuilder();
-
-        AppendUsings(sb, interfaceType);
-        sb.AppendLine();
-        AppendClassHeader(sb, adapterClassName, interfaceType);
-        AppendConstructor(sb, adapterClassName);
-        AppendProperties(sb, interfaceType);
-        AppendMethods(sb, interfaceType);
-        sb.AppendLine("}");
-
-        return sb.ToString();
+        return string.Join(Environment.NewLine, sourceLines);
     }
 
-    private static void AppendClassHeader(StringBuilder sb, string adapterClassName, Type interfaceType)
-    {
-        sb.AppendLine($"public class {adapterClassName} : {GetFullTypeName(interfaceType)}");
-        sb.AppendLine("{");
-        sb.AppendLine($"{Indent}private readonly IDictionary<string, object> _item;");
-    }
-
-    private static void AppendConstructor(StringBuilder sb, string adapterClassName)
-    {
-        sb.AppendLine();
-        sb.AppendLine($"{Indent}public {adapterClassName}(IDictionary<string, object> item)");
-        sb.AppendLine($"{Indent}{{");
-        sb.AppendLine($"{DoubleIndent}_item = item;");
-        sb.AppendLine($"{Indent}}}");
-    }
-
-    private static void AppendUsings(StringBuilder sb, Type interfaceType)
-    {
-        var namespaces = new HashSet<string> { "App", "System.Collections.Generic" };
-
-        AddTypeNamespaces(interfaceType, namespaces);
-
-        foreach (var prop in GetAllProperties(interfaceType))
+    private static IEnumerable<string> BuildClassLines(CommandMetadata metadata) =>
+        new[]
         {
-            AddTypeNamespaces(prop.PropertyType, namespaces);
+            $"public sealed class {metadata.AdapterClassName}(IDictionary<string, object> item) : {GetFullTypeName(metadata.InterfaceType)}",
+            "{"
         }
+        .Concat(CollectProperties(metadata.InterfaceType).SelectMany(BuildPropertyLines))
+        .Concat(CollectMethods(metadata.InterfaceType).SelectMany(method => BuildMethodLines(metadata.InterfaceType, method)));
 
-        foreach (var method in GetAllMethods(interfaceType))
-        {
-            AddTypeNamespaces(method.ReturnType, namespaces);
-
-            foreach (var param in method.GetParameters())
-            {
-                AddTypeNamespaces(param.ParameterType, namespaces);
-            }
-        }
-
-        foreach (var ns in namespaces.OrderBy(n => n))
-        {
-            sb.AppendLine($"using {ns};");
-        }
-    }
-
-    private static void AddTypeNamespaces(Type type, HashSet<string> namespaces)
+    private static IEnumerable<string> BuildPropertyLines(PropertyInfo property)
     {
-        namespaces.UnionWith(
-            new[] { type.Namespace }
-                .OfType<string>()
-                .Where(ns => ns.Length > 0));
-
-        foreach (var arg in type.GetGenericArguments())
+        var propertyTypeName = GetFullTypeName(property.PropertyType);
+        var propertyAccessors = new (bool IsEnabled, string Definition)[]
         {
-            AddTypeNamespaces(arg, namespaces);
-        }
-    }
-
-    private static void AppendProperties(StringBuilder sb, Type interfaceType)
-    {
-        foreach (var property in GetAllProperties(interfaceType))
-        {
-            sb.AppendLine();
-            var typeName = GetFullTypeName(property.PropertyType);
-
-            sb.AppendLine($"{Indent}public {typeName} {property.Name}");
-            sb.AppendLine($"{Indent}{{");
-            AppendPropertyAccessors(sb, property, typeName);
-            sb.AppendLine($"{Indent}}}");
-        }
-    }
-
-    private static void AppendPropertyAccessors(StringBuilder sb, PropertyInfo property, string typeName)
-    {
-        var accessors = new (bool enabled, string code)[]
-        {
-            (property.CanRead, $"{DoubleIndent}get => Ioc.Resolve<{typeName}>(\"Properties.{property.Name}\", _item);"),
-            (property.CanWrite, $"{DoubleIndent}set => Ioc.Resolve<ICommand>(\"Properties.{property.Name}.Set\", _item, value).Execute();")
+            (property.CanRead, $"get => Ioc.Resolve<{propertyTypeName}>(\"Properties.{property.Name}\", item);"),
+            (property.CanWrite, $"set => Ioc.Resolve<ICommand>(\"Properties.{property.Name}.Set\", item, value).Execute();")
         };
 
-        foreach (var (_, code) in accessors.Where(a => a.enabled))
-        {
-            sb.AppendLine(code);
-        }
+        return new[]
+            {
+                string.Empty,
+                $"    public {propertyTypeName} {property.Name}",
+                "    {"
+            }
+            .Concat(propertyAccessors
+                .Where(accessor => accessor.IsEnabled)
+                .Select(accessor => $"        {accessor.Definition}"))
+            .Append("    }");
     }
 
-    private static void AppendMethods(StringBuilder sb, Type interfaceType)
+    private static IEnumerable<string> BuildMethodLines(Type interfaceType, MethodInfo method)
     {
-        foreach (var method in GetAllMethods(interfaceType))
+        var returnTypeName = GetFullTypeName(method.ReturnType);
+        var parameters = method.GetParameters();
+        var parameterDefinitions = string.Join(", ", parameters.Select(parameter => $"{GetFullTypeName(parameter.ParameterType)} {parameter.Name}"));
+        var parameterArguments = parameters.Length > 0
+            ? ", " + string.Join(", ", parameters.Select(parameter => parameter.Name))
+            : string.Empty;
+        var dependencyKey = $"{interfaceType.Name}.{method.Name}";
+        var methodBody = method.ReturnType == typeof(void)
+            ? $"Ioc.Resolve<ICommand>(\"{dependencyKey}\", item{parameterArguments}).Execute();"
+            : $"return Ioc.Resolve<{returnTypeName}>(\"{dependencyKey}\", item{parameterArguments});";
+
+        return new[]
         {
-            sb.AppendLine();
-            var returnTypeName = GetFullTypeName(method.ReturnType);
-            var parameters = method.GetParameters();
-            var paramDefs = string.Join(", ", parameters.Select(p => $"{GetFullTypeName(p.ParameterType)} {p.Name}"));
-            var paramArgs = parameters.Length > 0
-                ? ", " + string.Join(", ", parameters.Select(p => p.Name))
-                : "";
-
-            var dependencyKey = $"{interfaceType.Name}.{method.Name}";
-
-            sb.AppendLine($"{Indent}public {returnTypeName} {method.Name}({paramDefs})");
-            sb.AppendLine($"{Indent}{{");
-
-            sb.AppendLine(method.ReturnType == typeof(void)
-                ? $"{DoubleIndent}Ioc.Resolve<ICommand>(\"{dependencyKey}\", _item{paramArgs}).Execute();"
-                : $"{DoubleIndent}return Ioc.Resolve<{returnTypeName}>(\"{dependencyKey}\", _item{paramArgs});");
-
-            sb.AppendLine($"{Indent}}}");
-        }
+            string.Empty,
+            $"    public {returnTypeName} {method.Name}({parameterDefinitions})",
+            "    {",
+            $"        {methodBody}",
+            "    }"
+        };
     }
+
+    private static IReadOnlyCollection<string> CollectImportedNamespaces(Type interfaceType)
+    {
+        var referencedNamespaces = GetTypeNamespaces(interfaceType)
+            .Concat(CollectProperties(interfaceType).SelectMany(property => GetTypeNamespaces(property.PropertyType)))
+            .Concat(CollectMethods(interfaceType).SelectMany(method => GetTypeNamespaces(method.ReturnType)))
+            .Concat(CollectMethods(interfaceType).SelectMany(method => method.GetParameters().SelectMany(parameter => GetTypeNamespaces(parameter.ParameterType))));
+
+        return new[] { "App", "System.Collections.Generic" }
+            .Concat(referencedNamespaces)
+            .OfType<string>()
+            .Distinct()
+            .OrderBy(namespaceName => namespaceName)
+            .ToArray();
+    }
+
+    private static IEnumerable<string> GetTypeNamespaces(Type type) =>
+        new[] { type.Namespace }.OfType<string>()
+            .Concat(type.GetGenericArguments().SelectMany(GetTypeNamespaces));
+
+    private static PropertyInfo[] CollectProperties(Type interfaceType) =>
+        CollectInterfaceMembers(interfaceType, type => type.GetProperties(), property => property.Name);
+
+    private static MethodInfo[] CollectMethods(Type interfaceType) =>
+        CollectInterfaceMembers(
+            interfaceType,
+            type => type.GetMethods().Where(method => !method.IsSpecialName),
+            method => (method.Name, string.Join(",", method.GetParameters().Select(parameter => parameter.ParameterType.FullName))));
 
     private static T[] CollectInterfaceMembers<T, TKey>(
         Type interfaceType,
         Func<Type, IEnumerable<T>> memberSelector,
-        Func<T, TKey> deduplicationKey)
-    {
-        return interfaceType.GetInterfaces()
+        Func<T, TKey> deduplicationKey) =>
+        interfaceType.GetInterfaces()
             .Prepend(interfaceType)
             .SelectMany(memberSelector)
             .GroupBy(deduplicationKey)
-            .Select(g => g.First())
+            .Select(group => group.First())
             .ToArray();
-    }
-
-    private static PropertyInfo[] GetAllProperties(Type interfaceType)
-    {
-        return CollectInterfaceMembers(
-            interfaceType,
-            t => t.GetProperties(),
-            p => p.Name);
-    }
-
-    private static MethodInfo[] GetAllMethods(Type interfaceType)
-    {
-        return CollectInterfaceMembers(
-            interfaceType,
-            t => t.GetMethods().Where(m => !m.IsSpecialName),
-            m => (m.Name, string.Join(",", m.GetParameters().Select(p => p.ParameterType.FullName))));
-    }
 
     private static string GetFullTypeName(Type type)
     {
@@ -173,9 +117,10 @@ public class AdapterSourceBuilder : IAdapterSourceBuilder
 
     private static string FormatGenericTypeName(Type type)
     {
-        var genericDef = type.GetGenericTypeDefinition();
-        var baseName = (genericDef.FullName ?? genericDef.Name).Split('`')[0];
-        var genericArgs = string.Join(", ", type.GetGenericArguments().Select(GetFullTypeName));
-        return $"{baseName}<{genericArgs}>";
+        var genericDefinition = type.GetGenericTypeDefinition();
+        var baseName = (genericDefinition.FullName ?? genericDefinition.Name).Split('`')[0];
+        var genericArguments = string.Join(", ", type.GetGenericArguments().Select(GetFullTypeName));
+
+        return $"{baseName}<{genericArguments}>";
     }
 }

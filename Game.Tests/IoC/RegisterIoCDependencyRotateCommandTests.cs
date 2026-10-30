@@ -1,13 +1,28 @@
-using Xunit;
+using Game;
+using Game.IoC;
+using Game.Commands;
 using Moq;
+using Xunit;
+
+namespace Game.Tests;
 
 public class RegisterIoCDependencyRotateCommandTests
 {
     public RegisterIoCDependencyRotateCommandTests()
     {
-        new InitCommand().Execute();
-        var testScope = Ioc.Resolve<object>("IoC.Scope.Create");
-        Ioc.Resolve<ICommand>("IoC.Scope.Current.Set", testScope).Execute();
+        IoCTestScope.Initialize();
+    }
+
+    [Fact]
+    public void Execute_Should_Throw_When_No_Arguments_Provided()
+    {
+        var registerCmd = new RegisterIoCDependencyRotateCommand();
+        registerCmd.Execute();
+
+        Assert.Throws<ArgumentException>(() =>
+        {
+            Ioc.Resolve<ICommand>("Commands.Rotate");
+        });
     }
 
     [Fact]
@@ -31,4 +46,3 @@ public class RegisterIoCDependencyRotateCommandTests
         Assert.IsType<RotateCommand>(resolvedCommand);
     }
 }
-

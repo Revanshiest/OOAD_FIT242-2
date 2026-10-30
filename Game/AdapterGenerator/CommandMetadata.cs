@@ -2,7 +2,7 @@ using System.Reflection;
 
 namespace Game.AdapterGenerator;
 
-public class CommandMetadata
+public sealed class CommandMetadata
 {
     public Type CommandType { get; }
     public Type InterfaceType { get; }

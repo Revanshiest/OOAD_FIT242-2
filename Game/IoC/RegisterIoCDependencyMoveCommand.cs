@@ -1,26 +1,19 @@
-using App;
-using App.Scopes;
-using Game;
+using Game.Commands;
 
-public class RegisterIoCDependencyMoveCommand : ICommand
+namespace Game.IoC;
+
+public sealed class RegisterIoCDependencyMoveCommand : ICommand
 {
     public void Execute()
     {
-        Func<object[], object> strategy = (object[] args) =>
+        Func<object[], object> strategy = args =>
         {
-            var obj = args[0];
-
-            var adapter = Ioc.Resolve<object>("Adapters.IMovingObject", obj);
+            var gameObject = StrategyArguments.Get<object>(args, 0);
+            var adapter = Ioc.Resolve<object>("Adapters.IMovingObject", gameObject);
 
             return new MoveCommand((IMovingObject)adapter);
         };
 
-        var registerCommand = Ioc.Resolve<ICommand>(
-            "IoC.Register",
-            "Commands.Move",
-            strategy
-        );
-
-        registerCommand.Execute();
+        Ioc.Resolve<ICommand>("IoC.Register", "Commands.Move", strategy).Execute();
     }
 }

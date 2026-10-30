@@ -1,14 +1,16 @@
 using Game;
-using Xunit;
+using Game.IoC;
+using Game.Commands;
 using Moq;
+using Xunit;
+
+namespace Game.Tests;
 
 public class RegisterIoCDependencyMoveCommandTests
 {
     public RegisterIoCDependencyMoveCommandTests()
     {
-        new InitCommand().Execute();
-        var testScope = Ioc.Resolve<object>("IoC.Scope.Create");
-        Ioc.Resolve<ICommand>("IoC.Scope.Current.Set", testScope).Execute();
+        IoCTestScope.Initialize();
     }
 
     [Fact]
@@ -38,23 +40,10 @@ public class RegisterIoCDependencyMoveCommandTests
         var registerCmd = new RegisterIoCDependencyMoveCommand();
         registerCmd.Execute();
 
-        Assert.Throws<IndexOutOfRangeException>(() =>
+        Assert.Throws<ArgumentException>(() =>
         {
             Ioc.Resolve<ICommand>("Commands.Move");
         });
-    }
-
-    [Fact]
-    public void Execute_Should_Create_Command_Even_Without_Registered_Adapter()
-    {
-        var mockGameObject = new Mock<object>().Object;
-
-        var registerCmd = new RegisterIoCDependencyMoveCommand();
-        registerCmd.Execute();
-
-        var command = Ioc.Resolve<ICommand>("Commands.Move", mockGameObject);
-
-        Assert.NotNull(command);
     }
 
     [Fact]

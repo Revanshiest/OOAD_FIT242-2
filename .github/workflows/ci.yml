@@ -20,7 +20,7 @@ jobs:
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
         with:
-            dotnet-version: 8.0.x
+            dotnet-version: 10.0.x
       - name: Cache NuGet packages
         uses: actions/cache@v4
         with:
@@ -68,7 +68,7 @@ jobs:
       - name: Show Coverage Details in Summary
         if: always()
         run: |
-          echo "## 📈 Code Coverage Report" >> $GITHUB_STEP_SUMMARY
+          echo "## Code Coverage Report" >> $GITHUB_STEP_SUMMARY
           if [ -f code-coverage-results.md ]; then
             cat code-coverage-results.md >> $GITHUB_STEP_SUMMARY
           else

@@ -1,12 +1,14 @@
-namespace Game.Tests;
-
+using Game;
+using Game.Commands;
 using Moq;
 using Xunit;
+
+namespace Game.Tests;
 
 public class SendCommandTests
 {
     [Fact]
-    public void SendCommand_Should_Call_Receive_On_Success()
+    public void Execute_CallsReceive_WhenReceiverAcceptsCommand()
     {
         var commandMock = new Mock<ICommand>();
         var receiverMock = new Mock<IMessageReceiver>();
@@ -20,7 +22,7 @@ public class SendCommandTests
     }
 
     [Fact]
-    public void SendCommand_Should_Throw_Exception_If_Receiver_Cannot_Accept()
+    public void Execute_ThrowsInvalidOperationException_WhenReceiverCannotAcceptCommand()
     {
         var commandMock = new Mock<ICommand>();
         var receiverMock = new Mock<IMessageReceiver>();
@@ -31,21 +33,23 @@ public class SendCommandTests
 
         var exception = Assert.Throws<InvalidOperationException>(() => sendCommand.Execute());
 
-        Assert.Equal("recipient is busy", exception.Message);
+        Assert.Equal("Message receiver is busy", exception.Message);
         receiverMock.Verify(r => r.Receive(It.IsAny<ICommand>()), Times.Never);
     }
 
     [Fact]
-    public void SendCommand_Constructor_Throws_When_Command_Is_Null()
+    public void Constructor_ThrowsArgumentNullException_WhenCommandIsNull()
     {
         var receiverMock = new Mock<IMessageReceiver>();
-        Assert.Throws<ArgumentNullException>(() => new SendCommand(null, receiverMock.Object));
+
+        Assert.Throws<ArgumentNullException>(() => new SendCommand(null!, receiverMock.Object));
     }
 
     [Fact]
-    public void SendCommand_Constructor_Throws_When_Receiver_Is_Null()
+    public void Constructor_ThrowsArgumentNullException_WhenReceiverIsNull()
     {
         var commandMock = new Mock<ICommand>();
-        Assert.Throws<ArgumentNullException>(() => new SendCommand(commandMock.Object, null));
+
+        Assert.Throws<ArgumentNullException>(() => new SendCommand(commandMock.Object, null!));
     }
 }

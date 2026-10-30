@@ -1,5 +1,6 @@
 using Game;
 using Game.AdapterGenerator;
+using Game.Commands;
 using Xunit;
 
 namespace Game.Tests;
@@ -16,7 +17,7 @@ public class AdapterSourceBuilderTests
 
         var source = _builder.BuildAdapterSource(metadata);
 
-        Assert.Contains($"public class {metadata.AdapterClassName}", source);
+        Assert.Contains($"public sealed class {metadata.AdapterClassName}", source);
     }
 
     [Fact]
@@ -31,14 +32,15 @@ public class AdapterSourceBuilderTests
     }
 
     [Fact]
-    public void BuildAdapterSource_ContainsItemField()
+    public void BuildAdapterSource_TakesItemThroughPrimaryConstructor()
     {
         var constructor = typeof(MoveCommand).GetConstructors()[0];
         var metadata = new CommandMetadata(typeof(MoveCommand), typeof(IMovingObject), constructor);
 
         var source = _builder.BuildAdapterSource(metadata);
 
-        Assert.Contains("private readonly IDictionary<string, object> _item;", source);
+        Assert.Contains($"public sealed class {metadata.AdapterClassName}(IDictionary<string, object> item) : Game.IMovingObject", source);
+        Assert.DoesNotContain("_item", source);
     }
 
     [Fact]
@@ -49,8 +51,8 @@ public class AdapterSourceBuilderTests
 
         var source = _builder.BuildAdapterSource(metadata);
 
-        Assert.Contains("Ioc.Resolve<Game.Vector>(\"Properties.Position\", _item)", source);
-        Assert.Contains("Ioc.Resolve<Game.Vector>(\"Properties.Speed\", _item)", source);
+        Assert.Contains("Ioc.Resolve<Game.Vector>(\"Properties.Position\", item)", source);
+        Assert.Contains("Ioc.Resolve<Game.Vector>(\"Properties.Speed\", item)", source);
     }
 
     [Fact]
@@ -61,7 +63,7 @@ public class AdapterSourceBuilderTests
 
         var source = _builder.BuildAdapterSource(metadata);
 
-        Assert.Contains("Ioc.Resolve<ICommand>(\"Properties.Position.Set\", _item, value).Execute()", source);
+        Assert.Contains("Ioc.Resolve<ICommand>(\"Properties.Position.Set\", item, value).Execute()", source);
     }
 
     [Fact]
@@ -73,17 +75,6 @@ public class AdapterSourceBuilderTests
         var source = _builder.BuildAdapterSource(metadata);
 
         Assert.DoesNotContain("Properties.Speed.Set", source);
-    }
-
-    [Fact]
-    public void BuildAdapterSource_ContainsConstructorWithItemParameter()
-    {
-        var constructor = typeof(MoveCommand).GetConstructors()[0];
-        var metadata = new CommandMetadata(typeof(MoveCommand), typeof(IMovingObject), constructor);
-
-        var source = _builder.BuildAdapterSource(metadata);
-
-        Assert.Contains($"public {metadata.AdapterClassName}(IDictionary<string, object> item)", source);
     }
 
     [Fact]
@@ -118,6 +109,6 @@ public class AdapterSourceBuilderTests
         var source = _builder.BuildAdapterSource(metadata);
 
         Assert.Contains("void Inject(", source);
-        Assert.Contains("Ioc.Resolve<ICommand>(\"ICommandInjectable.Inject\", _item, command).Execute();", source);
+        Assert.Contains("Ioc.Resolve<ICommand>(\"ICommandInjectable.Inject\", item, command).Execute();", source);
     }
 }

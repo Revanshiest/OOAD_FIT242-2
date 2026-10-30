@@ -1,13 +1,12 @@
-namespace Game;
+namespace Game.IoC;
 
-public class RegisterIoCDependencyGameObjectRepository : ICommand
+public sealed class RegisterIoCDependencyGameObjectRepository : ICommand
 {
     public void Execute()
     {
-        var repository = new GameObjectRepository();
+        var gameObjectRepository = new GameObjectRepository();
 
         Ioc.Resolve<ICommand>("IoC.Register", "Repository.GameObject",
-            (object[] args) => repository
-        ).Execute();
+            (object[] args) => gameObjectRepository).Execute();
     }
 }

@@ -1,9 +1,6 @@
-using System;
-using System.Linq;
+namespace Game.IoC;
 
-namespace Game;
-
-public class RegisterIoCDependencyMacroMoveRotate : ICommand
+public sealed class RegisterIoCDependencyMacroMoveRotate : ICommand
 {
     public void Execute()
     {

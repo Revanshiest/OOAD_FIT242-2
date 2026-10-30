@@ -1,9 +1,8 @@
-using Xunit;
-using System;
+using Game;
 
 namespace Game.Tests;
 
-public class VectorTest
+public class VectorTests
 {
     [Fact]
     public void Add_Vectors_CorrectSum()
@@ -25,6 +24,52 @@ public class VectorTest
 
         var exception = Assert.Throws<ArgumentException>(() => { Vector result = v1 + v2; });
         Assert.Equal("Vectors must be of the same length.", exception.Message);
+    }
+
+    [Fact]
+    public void Add_EmptyVectors_ReturnsEmptyVector()
+    {
+        var v1 = new Vector(new int[] { });
+        var v2 = new Vector(new int[] { });
+
+        var result = v1 + v2;
+
+        Assert.Equal(new Vector(new int[] { }), result);
+    }
+
+    [Fact]
+    public void Add_NullLeftOperand_ThrowsArgumentNullException()
+    {
+        var vector = new Vector(new int[] { 1, 2 });
+        Vector? nullVector = null;
+
+        Assert.Throws<ArgumentNullException>(() => { var result = nullVector! + vector; });
+    }
+
+    [Fact]
+    public void Add_NullRightOperand_ThrowsArgumentNullException()
+    {
+        var vector = new Vector(new int[] { 1, 2 });
+        Vector? nullVector = null;
+
+        Assert.Throws<ArgumentNullException>(() => { var result = vector + nullVector!; });
+    }
+
+    [Fact]
+    public void Constructor_ThrowsArgumentNullException_WhenCoordinatesAreNull()
+    {
+        Assert.Throws<ArgumentNullException>(() => new Vector(null!));
+    }
+
+    [Fact]
+    public void Constructor_CopiesCoordinates_DefensiveCopy()
+    {
+        var coordinates = new int[] { 1, 2 };
+        var vector = new Vector(coordinates);
+
+        coordinates[0] = 100;
+
+        Assert.Equal(new Vector(new int[] { 1, 2 }), vector);
     }
 
     [Fact]
@@ -74,7 +119,7 @@ public class VectorTest
     }
 
     [Fact]
-    public void GetHashCode_ReturnsUniqueHashCode()
+    public void GetHashCode_ReturnsNonZero()
     {
         Vector v1 = new Vector(new int[] { 1, 2 });
         int hashCode = v1.GetHashCode();

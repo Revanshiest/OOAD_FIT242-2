@@ -1,17 +1,16 @@
-namespace Game.Tests;
-
-using App;
-using App.Scopes;
+using Game;
+using Game.Commands;
+using Game.IoC;
 using Moq;
 using Xunit;
+
+namespace Game.Tests;
 
 public class RegisterIoCDependencyMacroMoveRotateTests
 {
     public RegisterIoCDependencyMacroMoveRotateTests()
     {
-        new InitCommand().Execute();
-        var testScope = Ioc.Resolve<object>("IoC.Scope.Create");
-        Ioc.Resolve<ICommand>("IoC.Scope.Current.Set", testScope).Execute();
+        IoCTestScope.Initialize();
 
         Ioc.Resolve<ICommand>("IoC.Register", "Commands.Macro",
             (object[] args) => new MacroCommand((ICommand[])args[0])).Execute();

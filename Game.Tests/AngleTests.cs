@@ -1,5 +1,11 @@
-public class AngleTest
+using Game;
+
+namespace Game.Tests;
+
+public class AngleTests
 {
+    private const double Precision = 1e-5;
+
     [Fact]
     public void TestAdditionProducesCorrectAngle()
     {
@@ -7,6 +13,54 @@ public class AngleTest
         var b = new Angle(7);
         var result = a + b;
         Assert.Equal(new Angle(4), result);
+    }
+
+    [Fact]
+    public void TestAdditionWrapsAtFullCircle()
+    {
+        var a = new Angle(7);
+        var b = new Angle(7);
+        var result = a + b;
+
+        Assert.Equal(new Angle(6), result);
+    }
+
+    [Fact]
+    public void TestAdditionWithFullCircleAngle_ReturnsSameAngle()
+    {
+        var a = new Angle(8);
+        var b = new Angle(3);
+        var result = a + b;
+
+        Assert.Equal(new Angle(3), result);
+    }
+
+    [Fact]
+    public void TestAdditionWithZeroAngle_ReturnsSameAngle()
+    {
+        var a = new Angle(5);
+        var b = new Angle(0);
+        var result = a + b;
+
+        Assert.Equal(new Angle(5), result);
+    }
+
+    [Fact]
+    public void TestEqualityOperator_AnglesEqualModuloFullCircle()
+    {
+        var a = new Angle(0);
+        var b = new Angle(8);
+
+        Assert.True(a == b);
+    }
+
+    [Fact]
+    public void TestHashCodeEqual_ForAnglesEqualModuloFullCircle()
+    {
+        var a = new Angle(0);
+        var b = new Angle(8);
+
+        Assert.Equal(a.GetHashCode(), b.GetHashCode());
     }
 
     [Fact]
@@ -139,7 +193,6 @@ public class AngleTest
 
         Assert.Equal(Math.PI, radians, precision: 5);
     }
-    private const double Precision = 1e-5;
 
     [Fact]
     public void Cos_ReturnsOne_ForZeroAngle()

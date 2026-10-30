@@ -1,4 +1,8 @@
-public class RegisterDependencyCommandInjectableCommand : ICommand
+using Game.Commands;
+
+namespace Game.IoC;
+
+public sealed class RegisterDependencyCommandInjectableCommand : ICommand
 {
     public void Execute()
     {

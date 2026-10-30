@@ -1,15 +1,15 @@
 using System.Collections.Generic;
+using Game.IoC;
 using Moq;
 using Xunit;
+
+namespace Game.Tests;
+
 public class RegisterIoCDependencyActionsStartTests
 {
     public RegisterIoCDependencyActionsStartTests()
     {
-        new InitCommand().Execute();
-        var testScope = Ioc.Resolve<object>("IoC.Scope.Create");
-        Ioc.Resolve<ICommand>("IoC.Scope.Current.Set", testScope).Execute();
-        Ioc.Resolve<ICommand>("IoC.Register", "Commands.Macro",
-            (object[] args) => new Mock<ICommand>().Object).Execute();
+        IoCTestScope.Initialize();
     }
 
     [Fact]

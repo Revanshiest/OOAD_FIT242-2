@@ -1,6 +1,6 @@
-namespace Game;
+namespace Game.Commands;
 
-public class SendCommand : ICommand
+public sealed class SendCommand : ICommand
 {
     private readonly ICommand _command;
     private readonly IMessageReceiver _receiver;
@@ -15,7 +15,7 @@ public class SendCommand : ICommand
     {
         if (!_receiver.CanAccept(_command))
         {
-            throw new InvalidOperationException("recipient is busy");
+            throw new InvalidOperationException("Message receiver is busy");
         }
 
         _receiver.Receive(_command);

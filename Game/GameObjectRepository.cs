@@ -2,25 +2,39 @@ using System.Collections.Concurrent;
 
 namespace Game;
 
-public class GameObjectRepository : IGameObjectRepository
+public sealed class GameObjectRepository : IGameObjectRepository
 {
-    private readonly ConcurrentDictionary<string, IDictionary<string, object>> _objects = new();
+    private readonly ConcurrentDictionary<string, IReadOnlyDictionary<string, object>> _gameObjects = new();
 
-    public IDictionary<string, object> Get(string id)
+    public IReadOnlyDictionary<string, object> Get(string gameObjectId)
     {
-        if (!_objects.TryGetValue(id, out var gameObject))
+        if (string.IsNullOrWhiteSpace(gameObjectId))
         {
-            throw new KeyNotFoundException($"Game object with id '{id}' not found");
+            throw new ArgumentException("Game object identifier is required.", nameof(gameObjectId));
         }
 
-        return gameObject;
+        if (!_gameObjects.TryGetValue(gameObjectId, out var gameObject))
+        {
+            throw new KeyNotFoundException($"Game object with id '{gameObjectId}' not found.");
+        }
+
+        return gameObject.ToDictionary(pair => pair.Key, pair => pair.Value);
     }
 
-    public void Add(string id, IDictionary<string, object> gameObject)
+    public void Add(string gameObjectId, IReadOnlyDictionary<string, object> gameObject)
     {
-        if (!_objects.TryAdd(id, gameObject))
+        if (string.IsNullOrWhiteSpace(gameObjectId))
         {
-            throw new InvalidOperationException($"Game object with id '{id}' already exists");
+            throw new ArgumentException("Game object identifier is required.", nameof(gameObjectId));
+        }
+
+        ArgumentNullException.ThrowIfNull(gameObject);
+
+        var snapshot = gameObject.ToDictionary(pair => pair.Key, pair => pair.Value);
+
+        if (!_gameObjects.TryAdd(gameObjectId, snapshot))
+        {
+            throw new InvalidOperationException($"Game object with id '{gameObjectId}' already exists.");
         }
     }
 }

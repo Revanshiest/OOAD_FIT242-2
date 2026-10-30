@@ -1,6 +1,6 @@
-namespace Game;
+namespace Game.Commands;
 
-public class MoveCommand(IMovingObject movingObject) : ICommand
+public sealed class MoveCommand(IMovingObject movingObject) : ICommand
 {
     public void Execute()
     {
