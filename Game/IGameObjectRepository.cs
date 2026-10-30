@@ -2,6 +2,7 @@ namespace Game;
 
 public interface IGameObjectRepository
 {
-    IDictionary<string, object> Get(string id);
-    void Add(string id, IDictionary<string, object> gameObject);
+    IReadOnlyDictionary<string, object> Get(string gameObjectId);
+
+    void Add(string gameObjectId, IReadOnlyDictionary<string, object> gameObject);
 }
