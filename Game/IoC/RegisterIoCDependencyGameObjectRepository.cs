@@ -6,7 +6,7 @@ public sealed class RegisterIoCDependencyGameObjectRepository : ICommand
     {
         var gameObjectRepository = new GameObjectRepository();
 
-        Ioc.Resolve<ICommand>(IocDependencyKeys.Register, IocDependencyKeys.GameObjectRepository,
+        Ioc.Resolve<ICommand>("IoC.Register", "Repository.GameObject",
             (object[] args) => gameObjectRepository).Execute();
     }
 }

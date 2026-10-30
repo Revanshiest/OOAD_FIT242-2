@@ -8,6 +8,6 @@ public sealed class RegisterIoCDependencyMacroCommand : ICommand
     {
         Func<object[], object> strategy = args => new MacroCommand(StrategyArguments.Get<ICommand[]>(args, 0));
 
-        Ioc.Resolve<ICommand>(IocDependencyKeys.Register, IocDependencyKeys.MacroCommand, strategy).Execute();
+        Ioc.Resolve<ICommand>("IoC.Register", "Commands.Macro", strategy).Execute();
     }
 }

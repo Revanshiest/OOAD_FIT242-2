@@ -16,6 +16,6 @@ public sealed class CreateMacroCommandStrategy
         var commandNames = Ioc.Resolve<string[]>(commandSpecification);
         var commands = commandNames.Select(name => Ioc.Resolve<ICommand>(name, arguments)).ToArray();
 
-        return Ioc.Resolve<ICommand>(IocDependencyKeys.MacroCommand, new object[] { commands });
+        return Ioc.Resolve<ICommand>("Commands.Macro", new object[] { commands });
     }
 }

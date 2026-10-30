@@ -10,6 +10,6 @@ public sealed class RegisterIoCDependencySendCommand : ICommand
             StrategyArguments.Get<ICommand>(args, 0),
             StrategyArguments.Get<IMessageReceiver>(args, 1));
 
-        Ioc.Resolve<ICommand>(IocDependencyKeys.Register, IocDependencyKeys.SendCommand, strategy).Execute();
+        Ioc.Resolve<ICommand>("IoC.Register", "Commands.Send", strategy).Execute();
     }
 }

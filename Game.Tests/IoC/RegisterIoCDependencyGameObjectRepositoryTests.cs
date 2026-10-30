@@ -16,7 +16,7 @@ public class RegisterIoCDependencyGameObjectRepositoryTests
     {
         new RegisterIoCDependencyGameObjectRepository().Execute();
 
-        var repository = Ioc.Resolve<IGameObjectRepository>(IocDependencyKeys.GameObjectRepository);
+        var repository = Ioc.Resolve<IGameObjectRepository>("Repository.GameObject");
 
         Assert.NotNull(repository);
         Assert.IsType<GameObjectRepository>(repository);
@@ -27,8 +27,8 @@ public class RegisterIoCDependencyGameObjectRepositoryTests
     {
         new RegisterIoCDependencyGameObjectRepository().Execute();
 
-        var firstResolution = Ioc.Resolve<IGameObjectRepository>(IocDependencyKeys.GameObjectRepository);
-        var secondResolution = Ioc.Resolve<IGameObjectRepository>(IocDependencyKeys.GameObjectRepository);
+        var firstResolution = Ioc.Resolve<IGameObjectRepository>("Repository.GameObject");
+        var secondResolution = Ioc.Resolve<IGameObjectRepository>("Repository.GameObject");
 
         Assert.Same(firstResolution, secondResolution);
     }

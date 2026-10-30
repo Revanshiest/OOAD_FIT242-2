@@ -4,15 +4,13 @@ namespace Game;
 
 public sealed class GameObjectRepository : IGameObjectRepository
 {
-    private const string IdentifierRequiredMessage = "Game object identifier is required.";
-
     private readonly ConcurrentDictionary<string, IReadOnlyDictionary<string, object>> _gameObjects = new();
 
     public IReadOnlyDictionary<string, object> Get(string gameObjectId)
     {
         if (string.IsNullOrWhiteSpace(gameObjectId))
         {
-            throw new ArgumentException(IdentifierRequiredMessage, nameof(gameObjectId));
+            throw new ArgumentException("Game object identifier is required.", nameof(gameObjectId));
         }
 
         if (!_gameObjects.TryGetValue(gameObjectId, out var gameObject))
@@ -27,7 +25,7 @@ public sealed class GameObjectRepository : IGameObjectRepository
     {
         if (string.IsNullOrWhiteSpace(gameObjectId))
         {
-            throw new ArgumentException(IdentifierRequiredMessage, nameof(gameObjectId));
+            throw new ArgumentException("Game object identifier is required.", nameof(gameObjectId));
         }
 
         ArgumentNullException.ThrowIfNull(gameObject);

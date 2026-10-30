@@ -9,11 +9,11 @@ public sealed class RegisterIoCDependencyMoveCommand : ICommand
         Func<object[], object> strategy = args =>
         {
             var gameObject = StrategyArguments.Get<object>(args, 0);
-            var adapter = Ioc.Resolve<object>(IocDependencyKeys.MovingObjectAdapter, gameObject);
+            var adapter = Ioc.Resolve<object>("Adapters.IMovingObject", gameObject);
 
             return new MoveCommand((IMovingObject)adapter);
         };
 
-        Ioc.Resolve<ICommand>(IocDependencyKeys.Register, IocDependencyKeys.MoveCommand, strategy).Execute();
+        Ioc.Resolve<ICommand>("IoC.Register", "Commands.Move", strategy).Execute();
     }
 }

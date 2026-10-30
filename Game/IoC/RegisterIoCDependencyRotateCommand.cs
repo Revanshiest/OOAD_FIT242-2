@@ -9,11 +9,11 @@ public sealed class RegisterIoCDependencyRotateCommand : ICommand
         Func<object[], object> strategy = args =>
         {
             var gameObject = StrategyArguments.Get<object>(args, 0);
-            var adapter = Ioc.Resolve<object>(IocDependencyKeys.RotatableAdapter, gameObject);
+            var adapter = Ioc.Resolve<object>("Adapters.IRotatable", gameObject);
 
             return new RotateCommand((IRotatable)adapter);
         };
 
-        Ioc.Resolve<ICommand>(IocDependencyKeys.Register, IocDependencyKeys.RotateCommand, strategy).Execute();
+        Ioc.Resolve<ICommand>("IoC.Register", "Commands.Rotate", strategy).Execute();
     }
 }

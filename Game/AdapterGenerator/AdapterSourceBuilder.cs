@@ -5,12 +5,6 @@ namespace Game.AdapterGenerator;
 
 public sealed class AdapterSourceBuilder : IAdapterSourceBuilder
 {
-    private const string SingleIndent = "    ";
-    private const string DoubleIndent = "        ";
-    private const string ItemParameterName = "item";
-    private const string AppNamespace = "App";
-    private const string CollectionsNamespace = "System.Collections.Generic";
-
     public string BuildAdapterSource(CommandMetadata metadata)
     {
         var sourceLines = CollectImportedNamespaces(metadata.InterfaceType)
@@ -25,7 +19,7 @@ public sealed class AdapterSourceBuilder : IAdapterSourceBuilder
     private static IEnumerable<string> BuildClassLines(CommandMetadata metadata) =>
         new[]
         {
-            $"public sealed class {metadata.AdapterClassName}(IDictionary<string, object> {ItemParameterName}) : {GetFullTypeName(metadata.InterfaceType)}",
+            $"public sealed class {metadata.AdapterClassName}(IDictionary<string, object> item) : {GetFullTypeName(metadata.InterfaceType)}",
             "{"
         }
         .Concat(CollectProperties(metadata.InterfaceType).SelectMany(BuildPropertyLines))
@@ -36,20 +30,20 @@ public sealed class AdapterSourceBuilder : IAdapterSourceBuilder
         var propertyTypeName = GetFullTypeName(property.PropertyType);
         var propertyAccessors = new (bool IsEnabled, string Definition)[]
         {
-            (property.CanRead, $"get => Ioc.Resolve<{propertyTypeName}>(\"Properties.{property.Name}\", {ItemParameterName});"),
-            (property.CanWrite, $"set => Ioc.Resolve<ICommand>(\"Properties.{property.Name}.Set\", {ItemParameterName}, value).Execute();")
+            (property.CanRead, $"get => Ioc.Resolve<{propertyTypeName}>(\"Properties.{property.Name}\", item);"),
+            (property.CanWrite, $"set => Ioc.Resolve<ICommand>(\"Properties.{property.Name}.Set\", item, value).Execute();")
         };
 
         return new[]
             {
                 string.Empty,
-                $"{SingleIndent}public {propertyTypeName} {property.Name}",
-                $"{SingleIndent}{{"
+                $"    public {propertyTypeName} {property.Name}",
+                "    {"
             }
             .Concat(propertyAccessors
                 .Where(accessor => accessor.IsEnabled)
-                .Select(accessor => $"{DoubleIndent}{accessor.Definition}"))
-            .Append($"{SingleIndent}}}");
+                .Select(accessor => $"        {accessor.Definition}"))
+            .Append("    }");
     }
 
     private static IEnumerable<string> BuildMethodLines(Type interfaceType, MethodInfo method)
@@ -62,16 +56,16 @@ public sealed class AdapterSourceBuilder : IAdapterSourceBuilder
             : string.Empty;
         var dependencyKey = $"{interfaceType.Name}.{method.Name}";
         var methodBody = method.ReturnType == typeof(void)
-            ? $"Ioc.Resolve<ICommand>(\"{dependencyKey}\", {ItemParameterName}{parameterArguments}).Execute();"
-            : $"return Ioc.Resolve<{returnTypeName}>(\"{dependencyKey}\", {ItemParameterName}{parameterArguments});";
+            ? $"Ioc.Resolve<ICommand>(\"{dependencyKey}\", item{parameterArguments}).Execute();"
+            : $"return Ioc.Resolve<{returnTypeName}>(\"{dependencyKey}\", item{parameterArguments});";
 
         return new[]
         {
             string.Empty,
-            $"{SingleIndent}public {returnTypeName} {method.Name}({parameterDefinitions})",
-            $"{SingleIndent}{{",
-            $"{DoubleIndent}{methodBody}",
-            $"{SingleIndent}}}"
+            $"    public {returnTypeName} {method.Name}({parameterDefinitions})",
+            "    {",
+            $"        {methodBody}",
+            "    }"
         };
     }
 
@@ -82,7 +76,7 @@ public sealed class AdapterSourceBuilder : IAdapterSourceBuilder
             .Concat(CollectMethods(interfaceType).SelectMany(method => GetTypeNamespaces(method.ReturnType)))
             .Concat(CollectMethods(interfaceType).SelectMany(method => method.GetParameters().SelectMany(parameter => GetTypeNamespaces(parameter.ParameterType))));
 
-        return new[] { AppNamespace, CollectionsNamespace }
+        return new[] { "App", "System.Collections.Generic" }
             .Concat(referencedNamespaces)
             .OfType<string>()
             .Distinct()

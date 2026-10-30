@@ -13,14 +13,14 @@ public sealed class StartCommand : ICommand
 
     public void Execute()
     {
-        var baseCommand = Ioc.Resolve<ICommand>($"{IocDependencyKeys.CommandsPrefix}{_commandType}", _gameObject);
-        var commandInjectable = Ioc.Resolve<ICommandInjectable>(IocDependencyKeys.CommandInjectable);
-        var messageReceiver = Ioc.Resolve<IMessageReceiver>(IocDependencyKeys.CommandsReceiver);
+        var baseCommand = Ioc.Resolve<ICommand>($"Commands.{_commandType}", _gameObject);
+        var commandInjectable = Ioc.Resolve<ICommandInjectable>("Commands.CommandInjectable");
+        var messageReceiver = Ioc.Resolve<IMessageReceiver>("Game.CommandsReceiver");
         var initialSendCommand = new SendCommand((ICommand)commandInjectable, messageReceiver);
-        var repeatableCommand = Ioc.Resolve<ICommand>($"{IocDependencyKeys.MacroPrefix}{_commandType}", baseCommand, initialSendCommand);
+        var repeatableCommand = Ioc.Resolve<ICommand>($"Macro.{_commandType}", baseCommand, initialSendCommand);
 
         commandInjectable.Inject(repeatableCommand);
-        _gameObject[$"{IocDependencyKeys.RepeatableCommandPrefix}{_commandType}"] = commandInjectable;
+        _gameObject[$"repeatable{_commandType}"] = commandInjectable;
 
         new SendCommand(repeatableCommand, messageReceiver).Execute();
     }
