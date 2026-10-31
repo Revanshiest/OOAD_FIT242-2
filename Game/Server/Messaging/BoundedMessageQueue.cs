@@ -54,9 +54,13 @@ public sealed class BoundedMessageQueue<TMessage> : IMessageQueueWriter<TMessage
         _channel.Writer.WriteAsync(message).AsTask().GetAwaiter().GetResult();
     }
 
-    public TMessage ReadBlocking()
+    public TMessage ReadBlocking(CancellationToken cancellationToken)
     {
-        var messageAvailable = _channel.Reader.WaitToReadAsync().AsTask().GetAwaiter().GetResult();
+        var messageAvailable = _channel.Reader
+            .WaitToReadAsync(cancellationToken)
+            .AsTask()
+            .GetAwaiter()
+            .GetResult();
 
         if (!messageAvailable || !_channel.Reader.TryRead(out var message))
         {

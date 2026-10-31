@@ -91,7 +91,7 @@ public class BoundedMessageQueueTests
         var queue = new BoundedMessageQueue<string>(QueueCapacity);
         queue.TryWrite("stored");
 
-        var readMessage = queue.ReadBlocking();
+        var readMessage = queue.ReadBlocking(CancellationToken.None);
 
         Assert.Equal("stored", readMessage);
         Assert.Equal(0, queue.PendingCount);
@@ -101,7 +101,7 @@ public class BoundedMessageQueueTests
     public async Task ReadBlocking_WaitsForProducerMessage_WhenQueueIsEmptyAtCallTime()
     {
         var queue = new BoundedMessageQueue<string>(QueueCapacity);
-        var readTask = Task.Run(() => queue.ReadBlocking());
+        var readTask = Task.Run(() => queue.ReadBlocking(CancellationToken.None));
 
         await Task.Yield();
         queue.TryWrite("delayed");
@@ -109,6 +109,20 @@ public class BoundedMessageQueueTests
         var readMessage = await readTask.WaitAsync(TimeSpan.FromMilliseconds(TaskCompletionTimeoutMilliseconds));
 
         Assert.Equal("delayed", readMessage);
+    }
+
+    [Fact]
+    public async Task ReadBlocking_ThrowsOperationCanceledException_WhenCancellationTokenIsCancelled()
+    {
+        var queue = new BoundedMessageQueue<string>(QueueCapacity);
+        using var cancellationSource = new CancellationTokenSource();
+        var readTask = Task.Run(() => queue.ReadBlocking(cancellationSource.Token));
+
+        await Task.Yield();
+        cancellationSource.Cancel();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
+            readTask.WaitAsync(TimeSpan.FromMilliseconds(TaskCompletionTimeoutMilliseconds)));
     }
 
     [Fact]
@@ -137,7 +151,7 @@ public class BoundedMessageQueueTests
         var blockingWriteTask = Task.Run(() => queue.WriteBlocking("overflow"));
         ConditionWaiter.WaitUntil(() => blockingWriteTask.Status == TaskStatus.Running);
 
-        queue.ReadBlocking();
+        queue.ReadBlocking(CancellationToken.None);
 
         await blockingWriteTask.WaitAsync(TimeSpan.FromMilliseconds(TaskCompletionTimeoutMilliseconds));
 
