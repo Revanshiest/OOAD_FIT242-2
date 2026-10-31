@@ -219,18 +219,33 @@ public sealed class GameWorker
 
     private bool HandleMigrateInMessage(InboundMessage message)
     {
-        var snapshot = _supportServices.SnapshotCodec.Deserialize(message.CommandArguments);
+        try
+        {
+            var snapshot = _supportServices.SnapshotCodec.Deserialize(message.CommandArguments);
 
-        if (_recipientsById.ContainsKey(snapshot.GameId))
+            if (_recipientsById.ContainsKey(snapshot.GameId))
+            {
+                return false;
+            }
+
+            var restoredGame = RestoreGame(snapshot);
+
+            _scheduler.Register(restoredGame);
+            _recipientsById[snapshot.GameId] = restoredGame;
+            return true;
+        }
+        catch (ArgumentException)
         {
             return false;
         }
-
-        var restoredGame = RestoreGame(snapshot);
-
-        _scheduler.Register(restoredGame);
-        _recipientsById[snapshot.GameId] = restoredGame;
-        return true;
+        catch (JsonException)
+        {
+            return false;
+        }
+        catch (KeyNotFoundException)
+        {
+            return false;
+        }
     }
 
     private void FinalizeCompletedMigrations()

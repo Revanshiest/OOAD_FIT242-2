@@ -9,7 +9,7 @@ using GameServer.Games.Pipeline;
 using GameServer.Messaging;
 using Game = GameServer.Games.Game;
 
-public sealed class JsonServerCommandDeserializer(TimeProvider timeProvider) : IServerCommandDeserializer
+public sealed class JsonServerCommandDeserializer : IServerCommandDeserializer
 {
     public const int MaxCoordinateMagnitude = 10000;
     public const int MaxSpeedMagnitude = 100;
@@ -17,15 +17,22 @@ public sealed class JsonServerCommandDeserializer(TimeProvider timeProvider) : I
     private const string TypeArgumentName = "type";
     private const string PositionArgumentName = "position";
     private const string SpeedArgumentName = "speed";
+    private readonly TimeProvider _timeProvider;
 
-    private readonly FrozenDictionary<string, Func<JsonElement, Game, ICommand>> _commandFactories =
-        new Dictionary<string, Func<JsonElement, Game, ICommand>>
+    private readonly FrozenDictionary<string, Func<JsonElement, Game, ICommand>> _commandFactories;
+
+    public JsonServerCommandDeserializer(TimeProvider timeProvider)
+    {
+        _timeProvider = timeProvider ?? throw new ArgumentNullException(nameof(timeProvider));
+
+        _commandFactories = new Dictionary<string, Func<JsonElement, Game, ICommand>>
         {
             [ServerCommandNames.CreateItem] = CreateItemCommandFactory,
             [ServerCommandNames.Move] = MoveCommandFactory,
-            [ServerCommandNames.Suspend] = (arguments, targetGame) => new SuspendGameCommand(targetGame, timeProvider),
+            [ServerCommandNames.Suspend] = (arguments, targetGame) => new SuspendGameCommand(targetGame, _timeProvider),
             [ServerCommandNames.Resume] = (_, _) => new EmptyCommand()
         }.ToFrozenDictionary();
+    }
 
     public ICommand Deserialize(InboundMessage message, Game targetGame)
     {

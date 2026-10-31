@@ -1,5 +1,6 @@
 namespace Game.Tests.Server.Workers;
 
+using GameServer.Games;
 using GameServer.Games.Pipeline;
 using GameServer.Messaging;
 using GameServer.Resharding;
@@ -13,6 +14,43 @@ public class GameWorkerTests
     private const int InputQueueCapacity = 64;
 
     private readonly RecordingGameTerminationObserver _terminationObserver = new();
+
+    [Fact]
+    public void ExecuteCycle_RejectsCorruptMigrationSnapshot_WithoutInterruptingCycle()
+    {
+        var (worker, inputQueue, scheduler) = CreateDefaultWorker();
+        inputQueue.TryWrite(new InboundMessage(
+            0,
+            "game-1",
+            "system",
+            ServerCommandNames.MigrateIn,
+            """{"gameId":"game-1","priority":"Normal","items":[{"itemId":"ship1","properties":{"IsAlive":true}}]}"""));
+
+        var cycleResult = worker.ExecuteCycle(TestTimestamp);
+
+        Assert.Equal(1, cycleResult.RejectedMessageCount);
+        Assert.Null(scheduler.FindGame("game-1"));
+    }
+
+    [Fact]
+    public void ExecuteCycle_RestoresGame_FromMigrationSnapshot()
+    {
+        var (worker, inputQueue, scheduler) = CreateDefaultWorker();
+        inputQueue.TryWrite(new InboundMessage(
+            0,
+            "game-1",
+            "system",
+            ServerCommandNames.MigrateIn,
+            """{"gameId":"game-1","priority":"High","items":[{"itemId":"ship1","properties":{"Type":"Ship","Position":[1,2],"Speed":[0,1]}}]}"""));
+
+        var cycleResult = worker.ExecuteCycle(TestTimestamp);
+
+        var restoredGame = scheduler.FindGame("game-1");
+        Assert.Equal(1, cycleResult.RoutedMessageCount);
+        Assert.NotNull(restoredGame);
+        Assert.Equal(GamePriority.High, restoredGame.Priority);
+        Assert.Equal("Ship", restoredGame.Scope.GetItem("ship1").GetProperty(GameItemProperty.DomainType));
+    }
 
     [Fact]
     public void ExecuteCycle_RoutesCreateItemMessage_AndRunsFullCreationPipeline()
