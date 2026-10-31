@@ -139,6 +139,10 @@ public sealed class GameWorker
         {
             return false;
         }
+        catch (KeyNotFoundException)
+        {
+            return false;
+        }
 
         _scheduler.NotifyCommandsQueued(targetGame);
         return true;

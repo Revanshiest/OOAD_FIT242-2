@@ -1,6 +1,8 @@
 namespace GameServer.Workers;
 
-public sealed class CommandRateLimiter
+using GameServer.Messaging;
+
+public sealed class CommandRateLimiter : IGameRateLimiter
 {
     private readonly double _bucketCapacity;
     private readonly double _tokensRefilledPerSecond;

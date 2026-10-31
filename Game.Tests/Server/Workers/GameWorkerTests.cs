@@ -45,6 +45,19 @@ public class GameWorkerTests
     }
 
     [Fact]
+    public void ExecuteCycle_RejectsMessageWithMissingCommandArguments()
+    {
+        var (worker, inputQueue, scheduler) = CreateDefaultWorker();
+        inputQueue.TryWrite(new InboundMessage(0, "game-1", "token", ServerCommandNames.Move, """{"wrongField":"x"}"""));
+
+        var cycleResult = worker.ExecuteCycle(TestTimestamp);
+
+        Assert.Equal(0, cycleResult.RoutedMessageCount);
+        Assert.Equal(1, cycleResult.RejectedMessageCount);
+        Assert.NotNull(scheduler.FindGame("game-1"));
+    }
+
+    [Fact]
     public void ExecuteCycle_RejectsMessageWithUnknownCommandName()
     {
         var (worker, inputQueue, scheduler) = CreateDefaultWorker();

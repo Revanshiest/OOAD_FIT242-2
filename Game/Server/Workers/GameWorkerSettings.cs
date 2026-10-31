@@ -1,12 +1,6 @@
 namespace GameServer.Workers;
 
-public sealed record GameWorkerSettings(
-    int CommandQuantumPerGameActivation,
-    int MaxQueueLengthPerGame,
-    int MaxActiveGames,
-    TimeSpan MaxExternalAwaitDuration,
-    double RateLimitBucketCapacity,
-    double RateLimitTokensPerSecond)
+public sealed class GameWorkerSettings
 {
     public const int DefaultCommandQuantum = 8;
     public const int DefaultMaxQueueLength = 256;
@@ -14,6 +8,48 @@ public sealed record GameWorkerSettings(
     public const int DefaultRateLimitBucketCapacity = 16;
     public const double DefaultRateLimitTokensPerSecond = 64.0;
     public static readonly TimeSpan DefaultMaxExternalAwaitDuration = TimeSpan.FromMinutes(5);
+
+    public GameWorkerSettings(
+        int commandQuantumPerGameActivation,
+        int maxQueueLengthPerGame,
+        int maxActiveGames,
+        TimeSpan maxExternalAwaitDuration,
+        double rateLimitBucketCapacity,
+        double rateLimitTokensPerSecond)
+    {
+        ValidateMinimum(commandQuantumPerGameActivation, 1, nameof(commandQuantumPerGameActivation));
+        ValidateMinimum(maxQueueLengthPerGame, 1, nameof(maxQueueLengthPerGame));
+        ValidateMinimum(maxActiveGames, 1, nameof(maxActiveGames));
+        ValidateMinimum(rateLimitBucketCapacity, 1, nameof(rateLimitBucketCapacity));
+        ValidateMinimum(rateLimitTokensPerSecond, 0, nameof(rateLimitTokensPerSecond));
+
+        if (maxExternalAwaitDuration <= TimeSpan.Zero)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(maxExternalAwaitDuration),
+                maxExternalAwaitDuration,
+                "External await duration must be positive.");
+        }
+
+        CommandQuantumPerGameActivation = commandQuantumPerGameActivation;
+        MaxQueueLengthPerGame = maxQueueLengthPerGame;
+        MaxActiveGames = maxActiveGames;
+        MaxExternalAwaitDuration = maxExternalAwaitDuration;
+        RateLimitBucketCapacity = rateLimitBucketCapacity;
+        RateLimitTokensPerSecond = rateLimitTokensPerSecond;
+    }
+
+    public int CommandQuantumPerGameActivation { get; }
+
+    public int MaxQueueLengthPerGame { get; }
+
+    public int MaxActiveGames { get; }
+
+    public TimeSpan MaxExternalAwaitDuration { get; }
+
+    public double RateLimitBucketCapacity { get; }
+
+    public double RateLimitTokensPerSecond { get; }
 
     public static GameWorkerSettings CreateDefault()
     {
@@ -24,5 +60,13 @@ public sealed record GameWorkerSettings(
             DefaultMaxExternalAwaitDuration,
             DefaultRateLimitBucketCapacity,
             DefaultRateLimitTokensPerSecond);
+    }
+
+    private static void ValidateMinimum(double fieldValue, double minimumValue, string fieldName)
+    {
+        if (fieldValue < minimumValue)
+        {
+            throw new ArgumentOutOfRangeException(fieldName, fieldValue, $"{fieldName} must be at least {minimumValue}.");
+        }
     }
 }

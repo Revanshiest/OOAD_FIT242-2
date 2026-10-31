@@ -11,6 +11,8 @@ using Game = GameServer.Games.Game;
 
 public sealed class JsonServerCommandDeserializer(TimeProvider timeProvider) : IServerCommandDeserializer
 {
+    public const int MaxCoordinateMagnitude = 10000;
+    public const int MaxSpeedMagnitude = 100;
     private const string ItemIdArgumentName = "itemId";
     private const string TypeArgumentName = "type";
     private const string PositionArgumentName = "position";
@@ -47,8 +49,8 @@ public sealed class JsonServerCommandDeserializer(TimeProvider timeProvider) : I
         var specification = new GameItemCreationSpecification(
             RequiredString(arguments, ItemIdArgumentName),
             RequiredString(arguments, TypeArgumentName),
-            ReadVector(arguments.GetProperty(PositionArgumentName)),
-            ReadVector(arguments.GetProperty(SpeedArgumentName)));
+            ReadClampedVector(arguments.GetProperty(PositionArgumentName), MaxCoordinateMagnitude),
+            ReadClampedVector(arguments.GetProperty(SpeedArgumentName), MaxSpeedMagnitude));
 
         return new CreateGameItemPipeline(targetGame.Scope, specification).Build();
     }
@@ -58,9 +60,14 @@ public sealed class JsonServerCommandDeserializer(TimeProvider timeProvider) : I
         return new MoveGameItemCommand(targetGame.Scope, RequiredString(arguments, ItemIdArgumentName));
     }
 
-    private static Vector ReadVector(JsonElement vectorElement)
+    private static Vector ReadClampedVector(JsonElement vectorElement, int maxComponentMagnitude)
     {
-        return new Vector(vectorElement.EnumerateArray().Select(component => component.GetInt32()).ToArray());
+        var clampedCoordinates = vectorElement
+            .EnumerateArray()
+            .Select(component => Math.Clamp(component.GetInt32(), -maxComponentMagnitude, maxComponentMagnitude))
+            .ToArray();
+
+        return new Vector(clampedCoordinates);
     }
 
     private static string RequiredString(JsonElement arguments, string argumentName)

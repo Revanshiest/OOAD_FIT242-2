@@ -63,6 +63,18 @@ public class GeneratedRouterDispatcherTests
     }
 
     [Fact]
+    public void Dispatch_MapsExtremeIntegerKeysIntoTableRange()
+    {
+        var dispatcher = new GeneratedRouterDispatcher(_recordingWriters.ToList());
+
+        var maximumKeyTarget = dispatcher.Dispatch(int.MaxValue);
+        var minimumKeyTarget = dispatcher.Dispatch(int.MinValue);
+
+        Assert.InRange(maximumKeyTarget.ThreadId, 0, WriterCount - 1);
+        Assert.InRange(minimumKeyTarget.ThreadId, 0, WriterCount - 1);
+    }
+
+    [Fact]
     public void Dispatch_DistributesUniformKeysAcrossAllWriters()
     {
         var dispatcher = new GeneratedRouterDispatcher(_recordingWriters.ToList());

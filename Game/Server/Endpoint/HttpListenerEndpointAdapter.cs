@@ -57,16 +57,19 @@ public sealed class HttpListenerEndpointAdapter : IDisposable
 
     private void AcceptLoop()
     {
-        try
+        while (_listener.IsListening)
         {
-            while (_listener.IsListening)
+            try
             {
                 HandleRequest(_listener.GetContext());
             }
-        }
-        catch (Exception exception) when (!_listener.IsListening)
-        {
-            _ = exception;
+            catch (HttpListenerException)
+            {
+            }
+            catch (ObjectDisposedException)
+            {
+                return;
+            }
         }
     }
 

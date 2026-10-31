@@ -2,9 +2,11 @@ using System.Collections.Frozen;
 
 namespace GameServer.Endpoint;
 
+using GameServer.Messaging;
+
 public interface IAuthenticator
 {
-    bool IsAuthenticated(string authToken);
+    bool IsAuthenticated(InboundMessage message);
 }
 
 public sealed class WhitelistTokenAuthenticator : IAuthenticator
@@ -18,8 +20,10 @@ public sealed class WhitelistTokenAuthenticator : IAuthenticator
         _allowedTokens = allowedTokens.ToFrozenSet(StringComparer.Ordinal);
     }
 
-    public bool IsAuthenticated(string authToken)
+    public bool IsAuthenticated(InboundMessage message)
     {
-        return !string.IsNullOrWhiteSpace(authToken) && _allowedTokens.Contains(authToken);
+        ArgumentNullException.ThrowIfNull(message);
+
+        return !string.IsNullOrWhiteSpace(message.AuthToken) && _allowedTokens.Contains(message.AuthToken);
     }
 }

@@ -64,6 +64,17 @@ public class CommandRateLimiterTests
     }
 
     [Fact]
+    public void TryAdmit_DoesNotRefill_WhenObservedTimeGoesBackwards()
+    {
+        var rateLimiter = new CommandRateLimiter(1, 100);
+        rateLimiter.TryAdmit("game-1", TestTimestamp);
+
+        var admittedAfterClockSkew = rateLimiter.TryAdmit("game-1", TestTimestamp.AddSeconds(-30));
+
+        Assert.False(admittedAfterClockSkew);
+    }
+
+    [Fact]
     public void TryAdmit_TreatsEveryGameAsIndependentBucket()
     {
         var rateLimiter = new CommandRateLimiter(1, 0);

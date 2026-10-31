@@ -1,3 +1,4 @@
+using System.Text;
 using System.Text.Json;
 
 namespace GameServer.Endpoint;
@@ -6,6 +7,8 @@ using GameServer.Messaging;
 
 public sealed class InboundMessageParser
 {
+    public const int MaxPayloadLengthBytes = 65536;
+    public const int MaxIdentifierLength = 64;
     private const string RoutingKeyFieldName = "key";
     private const string GameIdFieldName = "id";
     private const string AuthTokenFieldName = "token";
@@ -15,6 +18,13 @@ public sealed class InboundMessageParser
     public InboundMessage Parse(string requestPayload)
     {
         ArgumentNullException.ThrowIfNull(requestPayload);
+
+        if (Encoding.UTF8.GetByteCount(requestPayload) > MaxPayloadLengthBytes)
+        {
+            throw new PayloadTooLargeException(
+                $"Request payload exceeds the maximum size of {MaxPayloadLengthBytes} bytes.",
+                nameof(requestPayload));
+        }
 
         using var requestDocument = JsonDocument.Parse(requestPayload);
         var requestRoot = requestDocument.RootElement;
@@ -26,9 +36,9 @@ public sealed class InboundMessageParser
 
         return new InboundMessage(
             RequiredInt32(requestRoot, RoutingKeyFieldName),
-            RequiredString(requestRoot, GameIdFieldName),
+            RequiredIdentifier(requestRoot, GameIdFieldName),
             RequiredString(requestRoot, AuthTokenFieldName),
-            RequiredString(requestRoot, CommandNameFieldName),
+            RequiredIdentifier(requestRoot, CommandNameFieldName),
             OptionalCommandArguments(requestRoot));
     }
 
@@ -39,7 +49,9 @@ public sealed class InboundMessageParser
             throw new ArgumentException($"Request field '{fieldName}' is required and must be a number.");
         }
 
-        return fieldElement.GetInt32();
+        return fieldElement.TryGetInt32(out var routingKey)
+            ? routingKey
+            : throw new ArgumentException($"Request field '{fieldName}' must fit into a 32-bit integer.");
     }
 
     private static string RequiredString(JsonElement requestRoot, string fieldName)
@@ -51,6 +63,16 @@ public sealed class InboundMessageParser
 
         return fieldElement.GetString()
             ?? throw new ArgumentException($"Request field '{fieldName}' must not be null.");
+    }
+
+    private static string RequiredIdentifier(JsonElement requestRoot, string fieldName)
+    {
+        var identifierValue = RequiredString(requestRoot, fieldName);
+
+        return identifierValue.Length > 0 && identifierValue.Length <= MaxIdentifierLength
+            ? identifierValue
+            : throw new ArgumentException(
+                $"Request field '{fieldName}' length must be within [1, {MaxIdentifierLength}].");
     }
 
     private static string OptionalCommandArguments(JsonElement requestRoot)
