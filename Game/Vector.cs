@@ -11,6 +11,8 @@ public sealed class Vector : IEquatable<Vector>
         this.coordinates = [.. coordinates];
     }
 
+    public IReadOnlyList<int> Coordinates => coordinates;
+
     public static Vector operator +(Vector left, Vector right)
     {
         ArgumentNullException.ThrowIfNull(left);

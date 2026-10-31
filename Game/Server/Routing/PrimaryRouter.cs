@@ -1,6 +1,7 @@
 namespace GameServer.Routing;
 
 using GameServer.Messaging;
+using GameServer.Resharding;
 
 public sealed class PrimaryRouter
 {

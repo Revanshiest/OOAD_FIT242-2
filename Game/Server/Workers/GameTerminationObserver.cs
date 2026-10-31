@@ -3,7 +3,8 @@ namespace GameServer.Workers;
 public enum GameTerminationReason
 {
     WatchdogAwaitTimeout = 0,
-    FloodQueueOverflow = 1
+    FloodQueueOverflow = 1,
+    GameTransferred = 2
 }
 
 public interface IGameTerminationObserver

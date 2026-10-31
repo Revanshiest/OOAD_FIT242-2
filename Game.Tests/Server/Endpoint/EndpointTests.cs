@@ -1,5 +1,6 @@
 using GameServer.Endpoint;
 using GameServer.Messaging;
+using GameServer.Resharding;
 using GameServer.Routing;
 using Game.Tests.Server.Messaging;
 

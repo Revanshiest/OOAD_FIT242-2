@@ -4,6 +4,7 @@ using GameServer.Messaging;
 
 public sealed class WorkerThreadHost
 {
+    public static readonly TimeSpan WorkerIdlePollInterval = TimeSpan.FromMilliseconds(50);
     private readonly GameWorker _worker;
     private readonly TimeProvider _timeProvider;
     private readonly Thread _thread;
@@ -31,6 +32,8 @@ public sealed class WorkerThreadHost
 
     public IMessageQueueWriter<InboundMessage> MessageWriter { get; }
 
+    public bool IsShutdownCompleted => _worker.IsShutdownCompleted;
+
     public void Start()
     {
         _thread.Start();
@@ -52,10 +55,22 @@ public sealed class WorkerThreadHost
         {
             while (!_stopSource.IsCancellationRequested)
             {
-                _worker.ExecuteBlockingCycle(_timeProvider.GetUtcNow(), _stopSource.Token);
+                RunProtectedCycle();
+                _worker.WaitForIncomingMessage(WorkerIdlePollInterval, _stopSource.Token);
             }
         }
         catch (OperationCanceledException)
+        {
+        }
+    }
+
+    private void RunProtectedCycle()
+    {
+        try
+        {
+            _worker.ExecuteCycle(_timeProvider.GetUtcNow());
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
         {
         }
     }

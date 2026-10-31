@@ -25,6 +25,11 @@ public sealed class GameCommandQueue
 
     public void EnqueueTickMarker(ICommand tickCommand)
     {
+        if (_isSealedByTickMarker)
+        {
+            return;
+        }
+
         Enqueue(tickCommand);
         _isSealedByTickMarker = true;
     }

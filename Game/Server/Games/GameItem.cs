@@ -4,6 +4,8 @@ public sealed class GameItem : IGameItem
 {
     private readonly Dictionary<string, object> _properties = new();
 
+    public IReadOnlyCollection<string> PropertyNames => _properties.Keys;
+
     public object GetProperty(string propertyName)
     {
         if (string.IsNullOrWhiteSpace(propertyName))

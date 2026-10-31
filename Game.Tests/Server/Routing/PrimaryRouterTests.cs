@@ -1,4 +1,5 @@
 using GameServer.Routing;
+using GameServer.Resharding;
 using Game.Tests.Server.Messaging;
 
 namespace Game.Tests.Server.Routing;

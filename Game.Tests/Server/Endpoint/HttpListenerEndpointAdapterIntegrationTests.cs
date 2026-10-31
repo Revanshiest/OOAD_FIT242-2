@@ -2,6 +2,7 @@ using System.Net;
 using System.Text;
 using GameServer.Endpoint;
 using GameServer.Messaging;
+using GameServer.Resharding;
 using GameServer.Routing;
 using Game.Tests.Server;
 

@@ -2,7 +2,9 @@ namespace Game.Tests.Server.Workers;
 
 using GameServer.Games.Pipeline;
 using GameServer.Messaging;
+using GameServer.Resharding;
 using GameServer.Workers;
+using Game.Tests.Server.Resharding;
 using Game = GameServer.Games.Game;
 
 public class GameWorkerTests
@@ -103,6 +105,84 @@ public class GameWorkerTests
     }
 
     [Fact]
+    public void ExecuteCycle_SealsTargetedGame_OnTickMarker_AndRejectsLaterCommandsForIt()
+    {
+        var (worker, inputQueue, scheduler) = CreateDefaultWorker();
+        inputQueue.TryWrite(MoveMessage("game-1", "ship1"));
+        inputQueue.TryWrite(MoveMessage("game-1", "ship1"));
+        inputQueue.TryWrite(new InboundMessage(0, "game-1", "system", ServerCommandNames.TickMarker, """{"gameId":"game-1"}"""));
+
+        var firstCycle = worker.ExecuteCycle(TestTimestamp);
+        inputQueue.TryWrite(MoveMessage("game-1", "ship1"));
+        var secondCycle = worker.ExecuteCycle(TestTimestamp.AddSeconds(1));
+
+        Assert.Equal(3, firstCycle.RoutedMessageCount);
+        Assert.Equal(0, firstCycle.RejectedMessageCount);
+        Assert.Equal(1, firstCycle.DispatchedCommandCount);
+        Assert.Equal(2, firstCycle.FailedCommandCount);
+        Assert.Equal(1, secondCycle.RejectedMessageCount);
+        Assert.Equal(0, secondCycle.DispatchedCommandCount);
+        Assert.NotNull(scheduler.FindGame("game-1"));
+        Assert.True(FindCreatedGame("game-1")!.CommandQueue.IsSealedByTickMarker);
+    }
+
+    [Fact]
+    public void ExecuteCycle_SealsWholeWorker_OnGlobalTickMarker_AndSavesFinalSnapshots()
+    {
+        var (worker, inputQueue, _) = CreateDefaultWorker();
+        inputQueue.TryWrite(MoveMessage("game-1", "ship1"));
+        inputQueue.TryWrite(new InboundMessage(0, string.Empty, "system", ServerCommandNames.TickMarker, "{}"));
+        inputQueue.TryWrite(MoveMessage("game-2", "ship1"));
+
+        var cycleResult = worker.ExecuteCycle(TestTimestamp);
+
+        Assert.Equal(2, cycleResult.RoutedMessageCount);
+        Assert.Equal(1, cycleResult.RejectedMessageCount);
+        Assert.True(worker.IsShutdownCompleted);
+    }
+
+    [Fact]
+    public void ExecuteCycle_MigratesGameToTargetWorker_AndInstallsProxyForLateMessages()
+    {
+        var sourceInputQueue = new BoundedMessageQueue<InboundMessage>(InputQueueCapacity);
+        var targetInputQueue = new BoundedMessageQueue<InboundMessage>(InputQueueCapacity);
+        var sourceScheduler = CreateScheduler(GameWorkerSettings.CreateDefault());
+        var targetScheduler = CreateScheduler(GameWorkerSettings.CreateDefault());
+        var transitResolver = new FakeTransitResolver(new Dictionary<int, IMessageQueueWriter<InboundMessage>>
+        {
+            [0] = sourceInputQueue,
+            [1] = targetInputQueue
+        });
+        var overflowSink = new RecordingOverflowSink();
+        var sourceWorker = CreateWorkerWithServices(sourceInputQueue, sourceScheduler, transitResolver, overflowSink);
+        var targetWorker = CreateWorkerWithServices(targetInputQueue, targetScheduler, transitResolver, overflowSink);
+
+        sourceInputQueue.TryWrite(CreateItemMessage("game-1", "ship1", "Ship", new[] { 1, 2 }, new[] { 3, 4 }));
+        sourceWorker.ExecuteCycle(TestTimestamp);
+
+        sourceInputQueue.TryWrite(new InboundMessage(0, "game-1", "system", ServerCommandNames.MigrateOut, """{"targetThreadId":1}"""));
+        sourceWorker.ExecuteCycle(TestTimestamp.AddSeconds(1));
+
+        Assert.Null(sourceScheduler.FindGame("game-1"));
+        Assert.Equal(1, targetInputQueue.PendingCount);
+
+        targetWorker.ExecuteCycle(TestTimestamp.AddSeconds(1));
+        var restoredGame = targetScheduler.FindGame("game-1");
+
+        Assert.NotNull(restoredGame);
+        Assert.True(restoredGame.Scope.Contains("ship1"));
+        Assert.Equal(new Vector(new[] { 1, 2 }), restoredGame.Scope.GetItem("ship1").GetProperty(GameItemProperty.Position));
+
+        sourceInputQueue.TryWrite(MoveMessage("game-1", "ship1"));
+        sourceWorker.ExecuteCycle(TestTimestamp.AddSeconds(2));
+        targetWorker.ExecuteCycle(TestTimestamp.AddSeconds(2));
+
+        Assert.Equal(
+            new Vector(new[] { 4, 6 }),
+            targetScheduler.FindGame("game-1")!.Scope.GetItem("ship1").GetProperty(GameItemProperty.Position));
+    }
+
+    [Fact]
     public void ExecuteCycle_SuspendsGame_OnSuspendCommand_AndResumesOnResumeMessage()
     {
         var (worker, inputQueue, scheduler) = CreateDefaultWorker();
@@ -163,6 +243,35 @@ public class GameWorkerTests
         return CreateWorker(GameWorkerSettings.CreateDefault());
     }
 
+    private PriorityRoundRobinScheduler CreateScheduler(GameWorkerSettings settings)
+    {
+        return new PriorityRoundRobinScheduler(
+            settings,
+            new CommandRateLimiter(settings.RateLimitBucketCapacity, settings.RateLimitTokensPerSecond),
+            _terminationObserver);
+    }
+
+    private GameWorker CreateWorkerWithServices(
+        BoundedMessageQueue<InboundMessage> inputQueue,
+        PriorityRoundRobinScheduler scheduler,
+        FakeTransitResolver transitResolver,
+        RecordingOverflowSink overflowSink)
+    {
+        var supportServices = new GameWorkerSupportServices(
+            new JsonServerSnapshotCodec(),
+            transitResolver,
+            overflowSink,
+            new InMemorySnapshotStore());
+
+        return new GameWorker(
+            inputQueue,
+            scheduler,
+            new JsonServerCommandDeserializer(new FixedTimeProvider(TestTimestamp)),
+            new DefaultGameFactory(),
+            GameWorkerSettings.CreateDefault(),
+            supportServices);
+    }
+
     private (GameWorker Worker, BoundedMessageQueue<InboundMessage> InputQueue, PriorityRoundRobinScheduler Scheduler) CreateWorker(GameWorkerSettings settings)
     {
         var inputQueue = new BoundedMessageQueue<InboundMessage>(InputQueueCapacity);
@@ -170,12 +279,19 @@ public class GameWorkerTests
             settings,
             new CommandRateLimiter(settings.RateLimitBucketCapacity, settings.RateLimitTokensPerSecond),
             _terminationObserver);
+        var transitResolver = new FakeTransitResolver(new Dictionary<int, IMessageQueueWriter<InboundMessage>> { [0] = inputQueue });
+        var supportServices = new GameWorkerSupportServices(
+            new JsonServerSnapshotCodec(),
+            transitResolver,
+            new RecordingOverflowSink(),
+            new InMemorySnapshotStore());
         var worker = new GameWorker(
             inputQueue,
             scheduler,
             new JsonServerCommandDeserializer(new FixedTimeProvider(TestTimestamp)),
             new DefaultGameFactory(),
-            settings);
+            settings,
+            supportServices);
 
         _terminationObserver.SchedulerRef = scheduler;
 

@@ -9,6 +9,8 @@ public sealed record ScheduleOutcome(
 
 public interface IGameScheduler
 {
+    int TotalQueuedCommandCount { get; }
+
     void Register(Game game);
 
     Game? FindGame(string gameId);

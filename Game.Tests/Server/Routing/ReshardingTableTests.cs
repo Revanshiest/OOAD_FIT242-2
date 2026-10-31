@@ -1,4 +1,4 @@
-using GameServer.Routing;
+using GameServer.Resharding;
 
 namespace Game.Tests.Server.Routing;
 

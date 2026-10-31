@@ -2,7 +2,9 @@ namespace Game.Tests.Server.Workers;
 
 using GameServer.Games.Pipeline;
 using GameServer.Messaging;
+using GameServer.Resharding;
 using GameServer.Workers;
+using Game.Tests.Server.Resharding;
 
 public class WorkerThreadHostTests
 {
@@ -16,12 +18,19 @@ public class WorkerThreadHostTests
             GameWorkerSettings.CreateDefault(),
             new CommandRateLimiter(100, 100),
             NullGameTerminationObserver.Instance);
+        var transitResolver = new FakeTransitResolver(new Dictionary<int, IMessageQueueWriter<InboundMessage>> { [0] = inputQueue });
+        var supportServices = new GameWorkerSupportServices(
+            new JsonServerSnapshotCodec(),
+            transitResolver,
+            new RecordingOverflowSink(),
+            new InMemorySnapshotStore());
         var worker = new GameWorker(
             inputQueue,
             scheduler,
             new JsonServerCommandDeserializer(new FixedTimeProvider(TestTimestamp)),
             new DefaultGameFactory(),
-            GameWorkerSettings.CreateDefault());
+            GameWorkerSettings.CreateDefault(),
+            supportServices);
         var workerHost = new WorkerThreadHost(7, worker, inputQueue, new FixedTimeProvider(TestTimestamp));
 
         workerHost.Start();

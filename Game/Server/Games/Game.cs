@@ -1,6 +1,8 @@
+using GameServer.Messaging;
+
 namespace GameServer.Games;
 
-public sealed class Game
+public sealed class Game : IGameRecipient
 {
     private readonly GameCommandQueue _commandQueue = new();
     private bool _isAwaitingExternalEvent;

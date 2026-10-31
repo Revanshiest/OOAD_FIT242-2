@@ -4,6 +4,7 @@ namespace GameServer.Endpoint;
 
 using GameServer.Messaging;
 using GameServer.Routing;
+using GameServer.Resharding;
 
 public enum EndpointRejectionReason
 {

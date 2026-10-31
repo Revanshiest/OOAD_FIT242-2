@@ -25,6 +25,8 @@ public sealed class PriorityRoundRobinScheduler : IGameScheduler
 
     public int RegisteredGameCount => _gamesById.Count;
 
+    public int TotalQueuedCommandCount => _gamesById.Values.Sum(game => game.CommandQueue.Count);
+
     public void Register(Game game)
     {
         ArgumentNullException.ThrowIfNull(game);

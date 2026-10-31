@@ -1,6 +1,6 @@
 using System.Collections.Concurrent;
 
-namespace GameServer.Routing;
+namespace GameServer.Resharding;
 
 public sealed class ReshardingTable
 {
