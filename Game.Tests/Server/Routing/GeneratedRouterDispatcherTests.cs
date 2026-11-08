@@ -88,6 +88,24 @@ public class GeneratedRouterDispatcherTests
         Assert.All(_recordingWriters, writer => Assert.Equal(routingKeyCount / WriterCount, writer.WrittenMessages.Count));
     }
 
+    [Fact]
+    public void GeneratedRouterDispatcher_ReturnsPreallocatedRouteTarget_WithoutAllocations()
+    {
+        var writer1 = new RecordingMessageWriter();
+        var writer2 = new RecordingMessageWriter();
+        var dispatcher = new GeneratedRouterDispatcher([writer1, writer2]);
+
+        var target0First = dispatcher.Dispatch(0);
+        var target0Second = dispatcher.Dispatch(2);
+        var target1 = dispatcher.Dispatch(1);
+
+        Assert.Same(target0First, target0Second);
+        Assert.Equal(0, target0First.ThreadId);
+        Assert.Same(writer1, target0First.Writer);
+        Assert.Equal(1, target1.ThreadId);
+        Assert.Same(writer2, target1.Writer);
+    }
+
     private static InboundMessage CreateMessage(int routingKey)
     {
         return new InboundMessage(routingKey, $"game-{routingKey}", "token", "Move", "{}");

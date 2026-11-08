@@ -1,5 +1,7 @@
 using System.Collections.Concurrent;
+using System.Text.Json;
 using GameServer.Messaging;
+using GameServer.Routing;
 
 namespace Game.Tests.Server.Messaging;
 
@@ -248,5 +250,97 @@ public class BoundedMessageQueueTests
         {
             queue.DrainAllAvailable().ToList().ForEach(receivedMessages.Add);
         }
+    }
+
+    [Fact]
+    public void BoundedMessageQueue_TracksHeadAndTailPointers()
+    {
+        var queue = new BoundedMessageQueue<string>(8);
+        Assert.Equal(0, queue.HeadPointer);
+        Assert.Equal(0, queue.TailPointer);
+
+        queue.TryWrite("msg1");
+        queue.TryWrite("msg2");
+
+        Assert.Equal(0, queue.HeadPointer);
+        Assert.Equal(2, queue.TailPointer);
+
+        queue.ReadBlocking(CancellationToken.None);
+        Assert.Equal(1, queue.HeadPointer);
+        Assert.Equal(2, queue.TailPointer);
+
+        queue.ReadBlocking(CancellationToken.None);
+        Assert.Equal(2, queue.HeadPointer);
+        Assert.Equal(2, queue.TailPointer);
+    }
+
+    [Fact]
+    public void BoundedMessageQueue_PendingCount_NeverExceedsCapacity_WhenFull()
+    {
+        const int capacity = 4;
+        var queue = new BoundedMessageQueue<string>(capacity);
+
+        for (var i = 0; i < capacity; i++)
+        {
+            Assert.True(queue.TryWrite($"item-{i}"));
+        }
+
+        Assert.Equal(capacity, queue.PendingCount);
+
+        var rejected = queue.TryWrite("overflow");
+        Assert.False(rejected);
+        Assert.Equal(capacity, queue.PendingCount);
+    }
+
+    [Fact]
+    public async Task BoundedMessageQueue_WriteBlocking_CompletesWithoutDeadlock()
+    {
+        const int capacity = 2;
+        var queue = new BoundedMessageQueue<string>(capacity);
+
+        queue.TryWrite("msg1");
+        queue.TryWrite("msg2");
+
+        var writeTask = Task.Run(() => queue.WriteBlocking("msg3"));
+
+        await Task.Delay(50);
+        Assert.False(writeTask.IsCompleted);
+
+        var read = queue.ReadBlocking(CancellationToken.None);
+        Assert.Equal("msg1", read);
+
+        await writeTask.WaitAsync(TimeSpan.FromSeconds(2));
+
+        Assert.True(writeTask.IsCompletedSuccessfully);
+        Assert.Equal(2, queue.PendingCount);
+    }
+
+    [Fact]
+    public void InterfaceSegregation_SeparatesNonBlockingAndBlockingWriters()
+    {
+        var queue = new BoundedMessageQueue<InboundMessage>(10);
+
+        Assert.IsAssignableFrom<INonBlockingMessageWriter<InboundMessage>>(queue);
+        Assert.IsAssignableFrom<IBlockingMessageWriter<InboundMessage>>(queue);
+        Assert.IsAssignableFrom<IMessageQueueWriter<InboundMessage>>(queue);
+
+        var routeTarget = new RouteTarget(0, queue);
+        INonBlockingMessageWriter<InboundMessage> nonBlockingWriter = routeTarget.Writer;
+
+        Assert.True(nonBlockingWriter.TryWrite(new InboundMessage(0, "g", "t", "cmd", "{}")));
+    }
+
+    [Fact]
+    public void InboundMessage_NoMessage_HasValidDefaults()
+    {
+        var noMessage = InboundMessage.NoMessage;
+
+        Assert.Equal(-1, noMessage.RoutingKey);
+        Assert.False(string.IsNullOrWhiteSpace(noMessage.GameId));
+        Assert.False(string.IsNullOrWhiteSpace(noMessage.CommandName));
+        Assert.Equal("{}", noMessage.CommandArguments);
+
+        using var doc = JsonDocument.Parse(noMessage.CommandArguments);
+        Assert.Equal(JsonValueKind.Object, doc.RootElement.ValueKind);
     }
 }

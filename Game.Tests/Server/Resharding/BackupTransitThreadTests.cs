@@ -39,4 +39,28 @@ public class BackupTransitThreadTests
 
         Assert.True(true);
     }
+
+    [Fact]
+    public void BackupTransitThread_AutoStartsOnOverflow_AndDeliversEnvelope()
+    {
+        var backupThread = new BackupTransitThread(16);
+        Assert.False(backupThread.IsRunning);
+
+        var targetQueue = new BoundedMessageQueue<InboundMessage>(16);
+        var message = new InboundMessage(0, "game-backup", "token", "Move", "{}");
+
+        backupThread.Overflow(message, targetQueue);
+
+        Assert.True(backupThread.IsRunning);
+
+        var delivered = ConditionWaiter.WaitUntil(() => targetQueue.PendingCount > 0);
+        Assert.True(delivered);
+
+        var readMessage = targetQueue.ReadBlocking(CancellationToken.None);
+        Assert.Equal("game-backup", readMessage.GameId);
+
+        backupThread.Stop();
+        backupThread.Join();
+        Assert.False(backupThread.IsRunning);
+    }
 }

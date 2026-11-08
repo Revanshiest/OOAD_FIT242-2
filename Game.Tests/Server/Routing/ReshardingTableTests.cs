@@ -84,4 +84,18 @@ public class ReshardingTableTests
 
         Assert.Throws<ArgumentException>(() => reshardingTable.SetRoute(gameId!, 0));
     }
+
+    [Fact]
+    public void ReshardingTable_UpdateThreadCount_AllowsDynamicallyAddedWorkerThreadIds()
+    {
+        var reshardingTable = new ReshardingTable(2);
+
+        Assert.Throws<ArgumentOutOfRangeException>(() => reshardingTable.SetRoute("game-1", 2));
+
+        reshardingTable.UpdateThreadCount(3);
+        Assert.Equal(3, reshardingTable.ThreadCount);
+
+        reshardingTable.SetRoute("game-1", 2);
+        Assert.Equal(2, reshardingTable.ResolveRoute("game-1"));
+    }
 }

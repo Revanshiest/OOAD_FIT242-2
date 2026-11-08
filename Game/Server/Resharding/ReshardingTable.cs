@@ -2,54 +2,65 @@ using System.Collections.Concurrent;
 
 namespace GameServer.Resharding;
 
-public sealed class ReshardingTable
+public sealed class ReshardingTable : IReshardingTable
 {
-    private readonly int _threadCount;
+    private int _threadCount;
     private readonly ConcurrentDictionary<string, int> _threadIdByGameId = new();
 
     public ReshardingTable(int threadCount)
     {
-        if (threadCount < 1)
-        {
-            throw new ArgumentOutOfRangeException(nameof(threadCount), threadCount, "Thread count must be positive.");
-        }
-
+        ArgumentOutOfRangeException.ThrowIfLessThan(threadCount, 1, nameof(threadCount));
         _threadCount = threadCount;
+    }
+
+    public int ThreadCount => Volatile.Read(ref _threadCount);
+
+    public void UpdateThreadCount(int threadCount)
+    {
+        ArgumentOutOfRangeException.ThrowIfLessThan(threadCount, 1, nameof(threadCount));
+        Interlocked.Exchange(ref _threadCount, threadCount);
     }
 
     public void SetRoute(string gameId, int threadId)
     {
-        if (string.IsNullOrWhiteSpace(gameId))
-        {
-            throw new ArgumentException("Game identifier is required.", nameof(gameId));
-        }
+        _ = !string.IsNullOrWhiteSpace(gameId)
+            ? 0
+            : throw new ArgumentException("Game ID cannot be null or whitespace.", nameof(gameId));
 
-        if (threadId < 0 || threadId >= _threadCount)
-        {
-            throw new ArgumentOutOfRangeException(nameof(threadId), threadId, $"Thread identifier must be within [0, {_threadCount}).");
-        }
+        var currentThreadCount = Volatile.Read(ref _threadCount);
+        ArgumentOutOfRangeException.ThrowIfNegative(threadId, nameof(threadId));
+        ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual(threadId, currentThreadCount, nameof(threadId));
 
         _threadIdByGameId[gameId] = threadId;
     }
 
     public void RemoveRoute(string gameId)
     {
-        if (string.IsNullOrWhiteSpace(gameId))
-        {
-            throw new ArgumentException("Game identifier is required.", nameof(gameId));
-        }
+        _ = !string.IsNullOrWhiteSpace(gameId)
+            ? 0
+            : throw new ArgumentException("Game ID cannot be null or whitespace.", nameof(gameId));
 
         _threadIdByGameId.TryRemove(gameId, out _);
     }
 
+    public void RemoveRoutesForThread(int threadId)
+    {
+        var routesToRemove = _threadIdByGameId
+            .Where(pair => pair.Value == threadId)
+            .Select(pair => pair.Key)
+            .ToList();
+
+        foreach (var gameId in routesToRemove)
+        {
+            _threadIdByGameId.TryRemove(gameId, out _);
+        }
+    }
+
     public int? ResolveRoute(string gameId)
     {
-        if (string.IsNullOrWhiteSpace(gameId))
-        {
-            throw new ArgumentException("Game identifier is required.", nameof(gameId));
-        }
-
-        return _threadIdByGameId.TryGetValue(gameId, out var threadId) ? threadId : null;
+        return !string.IsNullOrWhiteSpace(gameId) && _threadIdByGameId.TryGetValue(gameId, out var threadId)
+            ? threadId
+            : null;
     }
 
     public IReadOnlyDictionary<string, int> Snapshot()

@@ -11,10 +11,10 @@ public sealed class RegisterIoCDependencyServerRouter : ICommand
 
     public void Execute()
     {
-        Ioc.Resolve<ICommand>("IoC.Register", CreateRouterKey, (object[] args) =>
+        Ioc.Resolve<ICommand>("IoC.Register", CreateRouterKey, (object[] arguments) =>
         {
-            var writersByThreadId = StrategyArguments.Get<IReadOnlyList<IMessageQueueWriter<InboundMessage>>>(args, 0);
-            var threadCount = StrategyArguments.Get<int>(args, 1);
+            var writersByThreadId = StrategyArguments.Get<IReadOnlyList<IMessageQueueWriter<InboundMessage>>>(arguments, 0);
+            var threadCount = StrategyArguments.Get<int>(arguments, 1);
 
             return new PrimaryRouter(writersByThreadId, new ReshardingTable(threadCount));
         }).Execute();

@@ -5,7 +5,8 @@ public sealed record InboundMessage(
     string GameId,
     string AuthToken,
     string CommandName,
-    string CommandArguments)
+    string CommandArguments,
+    string? MessageId = null)
 {
-    public static readonly InboundMessage NoMessage = new(0, string.Empty, string.Empty, string.Empty, string.Empty);
+    public static readonly InboundMessage NoMessage = new(-1, "__none__", string.Empty, "None", "{}");
 }

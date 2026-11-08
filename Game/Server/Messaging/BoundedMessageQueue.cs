@@ -1,101 +1,142 @@
-using System.Threading.Channels;
+using System.Diagnostics;
 
 namespace GameServer.Messaging;
 
 public sealed class BoundedMessageQueue<TMessage> : IMessageQueueWriter<TMessage>, IMessageQueueReader<TMessage>
 {
-    private readonly Channel<TMessage> _channel;
-    private int _pendingCount;
+    private const int WaitSliceMilliseconds = 50;
+    private readonly int _capacity;
+    private readonly Queue<TMessage> _queue;
+    private readonly object _syncLock = new();
+    private long _tailPointer;
+    private long _headPointer;
 
     public BoundedMessageQueue(int capacity)
     {
-        if (capacity < 1)
-        {
-            throw new ArgumentOutOfRangeException(nameof(capacity), capacity, "Queue capacity must be positive.");
-        }
-
-        _channel = Channel.CreateBounded<TMessage>(new BoundedChannelOptions(capacity)
-        {
-            SingleReader = true,
-            SingleWriter = false,
-            FullMode = BoundedChannelFullMode.Wait
-        });
+        ArgumentOutOfRangeException.ThrowIfLessThan(capacity, 1, nameof(capacity));
+        _capacity = capacity;
+        _queue = new Queue<TMessage>(capacity);
     }
 
-    public int PendingCount => Volatile.Read(ref _pendingCount);
+    public int PendingCount
+    {
+        get
+        {
+            lock (_syncLock)
+            {
+                return _queue.Count;
+            }
+        }
+    }
+
+    public long TailPointer
+    {
+        get
+        {
+            lock (_syncLock)
+            {
+                return _tailPointer;
+            }
+        }
+    }
+
+    public long HeadPointer
+    {
+        get
+        {
+            lock (_syncLock)
+            {
+                return _headPointer;
+            }
+        }
+    }
 
     public bool TryWrite(TMessage message)
     {
         ArgumentNullException.ThrowIfNull(message);
 
-        Interlocked.Increment(ref _pendingCount);
-
-        var messageAccepted = _channel.Writer.TryWrite(message);
-
-        if (!messageAccepted)
+        lock (_syncLock)
         {
-            Interlocked.Decrement(ref _pendingCount);
+            var canWrite = _queue.Count < _capacity;
+            _ = canWrite && EnqueueUnderLock(message);
+            return canWrite;
         }
+    }
 
-        return messageAccepted;
+    private bool EnqueueUnderLock(TMessage message)
+    {
+        _queue.Enqueue(message);
+        _tailPointer++;
+        Monitor.PulseAll(_syncLock);
+        return true;
     }
 
     public void WriteBlocking(TMessage message)
     {
         ArgumentNullException.ThrowIfNull(message);
 
-        Interlocked.Increment(ref _pendingCount);
-
-        if (_channel.Writer.TryWrite(message))
+        lock (_syncLock)
         {
-            return;
-        }
+            while (_queue.Count >= _capacity)
+            {
+                Monitor.Wait(_syncLock);
+            }
 
-        _channel.Writer.WriteAsync(message).AsTask().GetAwaiter().GetResult();
+            _queue.Enqueue(message);
+            _tailPointer++;
+            Monitor.PulseAll(_syncLock);
+        }
     }
 
     public bool WaitForMessage(TimeSpan waitTimeout, CancellationToken cancellationToken)
     {
-        using var timeoutSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        timeoutSource.CancelAfter(waitTimeout);
+        lock (_syncLock)
+        {
+            var remaining = waitTimeout;
+            var stopwatch = Stopwatch.StartNew();
 
-        try
-        {
-            return _channel.Reader.WaitToReadAsync(timeoutSource.Token).AsTask().GetAwaiter().GetResult();
-        }
-        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
-        {
-            return false;
+            while (_queue.Count == 0 && remaining > TimeSpan.Zero && !cancellationToken.IsCancellationRequested)
+            {
+                var slice = (int)Math.Min(remaining.TotalMilliseconds, WaitSliceMilliseconds);
+                Monitor.Wait(_syncLock, Math.Max(slice, 1));
+                remaining = waitTimeout - stopwatch.Elapsed;
+            }
+
+            return _queue.Count > 0 && !cancellationToken.IsCancellationRequested;
         }
     }
 
     public TMessage ReadBlocking(CancellationToken cancellationToken)
     {
-        var messageAvailable = _channel.Reader
-            .WaitToReadAsync(cancellationToken)
-            .AsTask()
-            .GetAwaiter()
-            .GetResult();
-
-        if (!messageAvailable || !_channel.Reader.TryRead(out var message))
+        lock (_syncLock)
         {
-            throw new InvalidOperationException("Message queue was completed before the blocking read finished.");
-        }
+            while (_queue.Count == 0)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                Monitor.Wait(_syncLock, WaitSliceMilliseconds);
+                cancellationToken.ThrowIfCancellationRequested();
+            }
 
-        Interlocked.Decrement(ref _pendingCount);
-        return message;
+            var message = _queue.Dequeue();
+            _headPointer++;
+            Monitor.PulseAll(_syncLock);
+            return message;
+        }
     }
 
     public IReadOnlyList<TMessage> DrainAllAvailable()
     {
-        var drainedMessages = new List<TMessage>();
-
-        while (_channel.Reader.TryRead(out var message))
+        lock (_syncLock)
         {
-            drainedMessages.Add(message);
-            Interlocked.Decrement(ref _pendingCount);
-        }
+            var drainedMessages = new List<TMessage>(_queue.Count);
+            while (_queue.Count > 0)
+            {
+                drainedMessages.Add(_queue.Dequeue());
+                _headPointer++;
+            }
 
-        return drainedMessages;
+            Monitor.PulseAll(_syncLock);
+            return drainedMessages;
+        }
     }
 }
