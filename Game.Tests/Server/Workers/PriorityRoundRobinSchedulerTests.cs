@@ -1,6 +1,9 @@
 namespace Game.Tests.Server.Workers;
 
+using Game.Commands;
+using Game.IoC;
 using GameServer.Games;
+using GameServer.Messaging;
 using GameServer.Workers;
 using Game = GameServer.Games.Game;
 
@@ -22,6 +25,155 @@ public class PriorityRoundRobinSchedulerTests
 
         Assert.Same(game, scheduler.FindGame("game-1"));
         Assert.Equal(1, scheduler.RegisteredGameCount);
+    }
+
+    [Fact]
+    public void Scheduler_SetsGameIoCScope_DuringCommandExecution()
+    {
+        new InitCommand().Execute();
+        var rootScope = Ioc.Resolve<object>("IoC.Scope.Create");
+        Ioc.Resolve<ICommand>("IoC.Scope.Current.Set", rootScope).Execute();
+
+        var gameScope = new Scope();
+        Assert.NotNull(gameScope.IocScope);
+
+        Ioc.Resolve<ICommand>("IoC.Scope.Current.Set", gameScope.IocScope).Execute();
+        Ioc.Resolve<ICommand>("IoC.Register", "GamePrivateValue", (object[] _) => "PrivateSecret42").Execute();
+
+        Ioc.Resolve<ICommand>("IoC.Scope.Current.Set", rootScope).Execute();
+
+        Assert.ThrowsAny<Exception>(() => Ioc.Resolve<string>("GamePrivateValue"));
+
+        string? resolvedValueInsideExecution = null;
+        var testCommand = new ActionCommand(() =>
+        {
+            resolvedValueInsideExecution = Ioc.Resolve<string>("GamePrivateValue");
+        });
+
+        var game = new Game("game-scope-test", GamePriority.High, gameScope);
+        game.Tell(testCommand);
+
+        var scheduler = new PriorityRoundRobinScheduler(
+            GameWorkerSettings.CreateDefault(),
+            new CommandRateLimiter(16, 64),
+            NullGameTerminationObserver.Instance);
+
+        scheduler.Register(game);
+
+        var outcome = scheduler.ScheduleCycle(TestTimestamp);
+
+        Assert.Equal(1, outcome.DispatchedCommandCount);
+        Assert.Equal(0, outcome.FailedCommandCount);
+        Assert.Equal("PrivateSecret42", resolvedValueInsideExecution);
+
+        Assert.ThrowsAny<Exception>(() => Ioc.Resolve<string>("GamePrivateValue"));
+    }
+
+    [Fact]
+    public void PriorityRoundRobinScheduler_AcceptsIGameRateLimiter_Abstraction()
+    {
+        var mockLimiter = new MockRateLimiter();
+        var scheduler = new PriorityRoundRobinScheduler(
+            GameWorkerSettings.CreateDefault(),
+            mockLimiter,
+            NullGameTerminationObserver.Instance);
+
+        var game = new Game("g-lim", GamePriority.Normal, new Scope());
+        game.CommandQueue.Enqueue(new ActionCommand(() => { }));
+        scheduler.Register(game);
+
+        scheduler.ScheduleCycle(TestTimestamp);
+
+        Assert.True(mockLimiter.TryAdmitCalled);
+    }
+
+    [Fact]
+    public void Scheduler_InterleavesHighAndNormalPriorityGames_PreventingStarvation()
+    {
+        var settings = new GameWorkerSettings(1, 256, 100, TimeSpan.FromMinutes(5), 100, 100);
+        var scheduler = new PriorityRoundRobinScheduler(
+            settings,
+            new CommandRateLimiter(settings.RateLimitBucketCapacity, settings.RateLimitTokensPerSecond),
+            NullGameTerminationObserver.Instance);
+
+        var executionOrder = new List<string>();
+
+        for (int i = 1; i <= 6; i++)
+        {
+            var highGame = new Game($"high-{i}", GamePriority.High, new Scope());
+            highGame.CommandQueue.Enqueue(new LogCommand($"high-{i}", executionOrder));
+            scheduler.Register(highGame);
+        }
+
+        for (int i = 1; i <= 2; i++)
+        {
+            var normalGame = new Game($"normal-{i}", GamePriority.Normal, new Scope());
+            normalGame.CommandQueue.Enqueue(new LogCommand($"normal-{i}", executionOrder));
+            scheduler.Register(normalGame);
+        }
+
+        scheduler.ScheduleCycle(TestTimestamp);
+
+        Assert.Equal(8, executionOrder.Count);
+        Assert.Equal("high-1", executionOrder[0]);
+        Assert.Equal("high-2", executionOrder[1]);
+        Assert.Equal("high-3", executionOrder[2]);
+        Assert.Equal("normal-1", executionOrder[3]);
+        Assert.Equal("high-4", executionOrder[4]);
+        Assert.Equal("high-5", executionOrder[5]);
+        Assert.Equal("high-6", executionOrder[6]);
+        Assert.Equal("normal-2", executionOrder[7]);
+    }
+
+    [Fact]
+    public void Scheduler_TracksAndNotifiesExceptions_ViaEvent()
+    {
+        var settings = GameWorkerSettings.CreateDefault();
+        var scheduler = new PriorityRoundRobinScheduler(
+            settings,
+            new CommandRateLimiter(settings.RateLimitBucketCapacity, settings.RateLimitTokensPerSecond),
+            NullGameTerminationObserver.Instance);
+
+        Exception? capturedException = null;
+        ICommand? capturedCommand = null;
+        scheduler.CommandExecutionFailed += (cmd, ex) =>
+        {
+            capturedCommand = cmd;
+            capturedException = ex;
+        };
+
+        var failingCommand = new FailingCommand();
+        var game = new Game("game-err", GamePriority.Normal, new Scope());
+        game.CommandQueue.Enqueue(failingCommand);
+        scheduler.Register(game);
+
+        var outcome = scheduler.ScheduleCycle(TestTimestamp);
+
+        Assert.Equal(1, outcome.FailedCommandCount);
+        Assert.Same(failingCommand, capturedCommand);
+        Assert.NotNull(capturedException);
+        Assert.IsType<InvalidOperationException>(capturedException);
+    }
+
+    private sealed class ActionCommand(Action action) : ICommand
+    {
+        public void Execute() => action();
+    }
+
+    private sealed class FailingCommand : ICommand
+    {
+        public void Execute() => throw new InvalidOperationException("Command execution failed intentionally.");
+    }
+
+    private sealed class MockRateLimiter : IGameRateLimiter
+    {
+        public bool TryAdmitCalled { get; private set; }
+
+        public bool TryAdmit(string gameId, DateTimeOffset currentTime)
+        {
+            TryAdmitCalled = true;
+            return true;
+        }
     }
 
     [Fact]

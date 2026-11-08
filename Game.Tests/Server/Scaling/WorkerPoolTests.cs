@@ -3,6 +3,7 @@ namespace Game.Tests.Server.Scaling;
 using GameServer.Games.Pipeline;
 using GameServer.Messaging;
 using GameServer.Resharding;
+using GameServer.Routing;
 using GameServer.Scaling;
 using GameServer.Workers;
 using Game.Tests.Server.Resharding;
@@ -117,6 +118,108 @@ public class WorkerPoolTests
     private static InboundMessage MoveMessage(string gameId, string itemId)
     {
         return new InboundMessage(0, gameId, "token", ServerCommandNames.Move, $$"""{"itemId":"{{itemId}}"}""");
+    }
+
+    [Fact]
+    public void WorkerPool_AttachRouter_AutomaticallyRegistersDynamicallyStartedWorkers()
+    {
+        var workerPool = CreateWorkerPool();
+        var initialThread = workerPool.StartWorker();
+        var reshardingTable = new ReshardingTable(1);
+        var primaryRouter = new PrimaryRouter([workerPool.ResolveWriter(initialThread)], reshardingTable);
+
+        workerPool.AttachRouter(primaryRouter);
+        Assert.Equal(1, primaryRouter.WorkerCount);
+
+        var secondThread = workerPool.StartWorker();
+
+        Assert.Equal(2, primaryRouter.WorkerCount);
+        Assert.Equal(2, reshardingTable.ThreadCount);
+
+        workerPool.StopAll();
+    }
+
+    [Fact]
+    public void WorkerPool_ScaleDownWorker_InitiatesMigrationOfAllActiveGames()
+    {
+        var workerPool = CreateWorkerPool();
+        var worker0 = workerPool.StartWorker();
+        var worker1 = workerPool.StartWorker();
+
+        var reshardingTable = new ReshardingTable(2);
+        var coordinator = new GameMigrationCoordinator(reshardingTable, workerPool);
+
+        workerPool.TryPost(worker0, new InboundMessage(0, "game-scale", "token", ServerCommandNames.CreateItem,
+            """{"itemId":"ship1","type":"Ship","position":[1,2],"speed":[3,4]}"""));
+
+        ConditionWaiter.WaitUntil(() => workerPool.TryGetGameScope(worker0, "game-scale")?.Contains("ship1") == true);
+
+        workerPool.ScaleDownWorker(worker0, worker1, coordinator);
+
+        var migrated = ConditionWaiter.WaitUntil(() =>
+            workerPool.TryGetGameScope(worker0, "game-scale") is null
+            && workerPool.TryGetGameScope(worker1, "game-scale")?.Contains("ship1") == true);
+
+        Assert.True(migrated);
+        Assert.Equal(1, reshardingTable.ResolveRoute("game-scale"));
+
+        workerPool.StopAll();
+    }
+
+    [Fact]
+    public void WorkerPool_AcceptsAndUsesWorkerHostFactory()
+    {
+        var customFactory = new RecordingWorkerHostFactory();
+        var pool = new WorkerPool(
+            GameWorkerSettings.CreateDefault(),
+            TimeProvider.System,
+            NullGameTerminationObserver.Instance,
+            new JsonServerCommandDeserializer(),
+            new DefaultGameFactory(),
+            new JsonServerSnapshotCodec(),
+            new RecordingOverflowSink(),
+            new InMemorySnapshotStore(),
+            customFactory);
+
+        var threadId = pool.StartWorker();
+
+        Assert.Equal(0, threadId);
+        Assert.Equal(1, customFactory.CreatedCount);
+        Assert.Equal(1, pool.WorkerCount);
+
+        pool.StopAll();
+    }
+
+    private sealed class RecordingWorkerHostFactory : IWorkerHostFactory
+    {
+        public int CreatedCount { get; private set; }
+        private readonly DefaultWorkerHostFactory _defaultFactory = new();
+
+        public WorkerCell CreateWorkerCell(
+            int threadId,
+            GameWorkerSettings settings,
+            TimeProvider timeProvider,
+            IGameTerminationObserver terminationObserver,
+            IServerCommandDeserializer commandDeserializer,
+            IGameFactory gameFactory,
+            ISnapshotCodec snapshotCodec,
+            ITransitResolver transitResolver,
+            ITransitOverflowSink overflowSink,
+            ISnapshotStore snapshotStore)
+        {
+            CreatedCount++;
+            return _defaultFactory.CreateWorkerCell(
+                threadId,
+                settings,
+                timeProvider,
+                terminationObserver,
+                commandDeserializer,
+                gameFactory,
+                snapshotCodec,
+                transitResolver,
+                overflowSink,
+                snapshotStore);
+        }
     }
 
     private WorkerPool CreateWorkerPool()

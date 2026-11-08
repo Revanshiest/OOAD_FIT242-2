@@ -1,10 +1,13 @@
 namespace Game.Tests.Server.Scaling;
 
+using GameServer.Endpoint;
 using GameServer.Lifecycle;
 using GameServer.Messaging;
 using GameServer.Resharding;
+using GameServer.Routing;
 using GameServer.Scaling;
 using GameServer.Workers;
+using Game.Tests.Server.Messaging;
 using Game.Tests.Server.Resharding;
 
 public class ServerShutdownCoordinatorTests
@@ -85,6 +88,73 @@ public class ServerShutdownCoordinatorTests
             _snapshotStore,
             TimeProvider.System,
             TimeSpan.Zero));
+    }
+
+    [Fact]
+    public void SoftStop_DoesNotHangOnAwaitingGames_SavesSnapshotGracefully()
+    {
+        var workerPool = CreateWorkerPool();
+        var threadId = workerPool.StartWorker();
+
+        workerPool.TryPost(threadId, new InboundMessage(threadId, "game-await", "token", ServerCommandNames.CreateItem,
+            """{"itemId":"item1","type":"Ship","position":[1,2],"speed":[3,4]}"""));
+
+        ConditionWaiter.WaitUntil(() => workerPool.TryGetGameScope(threadId, "game-await")?.Contains("item1") == true);
+
+        var coordinator = new ServerShutdownCoordinator(
+            workerPool,
+            _snapshotStore,
+            TimeProvider.System,
+            TimeSpan.FromSeconds(5));
+
+        var shutdownResult = coordinator.SoftStop();
+
+        Assert.True(shutdownResult.CompletedGracefully);
+        Assert.True(shutdownResult.SavedSnapshotCount >= 1);
+
+        var savedSnapshots = _snapshotStore.LoadAll();
+        Assert.Contains(savedSnapshots, s => s.GameId == "game-await");
+    }
+
+    [Fact]
+    public void ServerShutdownCoordinator_Restart_SealsAndResumesAcceptance()
+    {
+        var writer = new RecordingMessageWriter();
+        var primaryRouter = new PrimaryRouter([writer], new ReshardingTable(1));
+        var endpoint = new Endpoint(
+            new WhitelistTokenAuthenticator(["token"]),
+            new InboundMessageParser(),
+            primaryRouter);
+
+        var workerPool = CreateWorkerPool();
+
+        var coordinator = new ServerShutdownCoordinator(
+            workerPool,
+            new InMemorySnapshotStore(),
+            TimeProvider.System,
+            TimeSpan.FromSeconds(2),
+            endpoint);
+
+        Assert.False(endpoint.IsAcceptanceSealed);
+
+        coordinator.SealAcceptance();
+        Assert.True(endpoint.IsAcceptanceSealed);
+
+        coordinator.Restart();
+        Assert.False(endpoint.IsAcceptanceSealed);
+    }
+
+    [Fact]
+    public void ServerShutdownCoordinator_ImplementsIServerShutdownCoordinator_Abstraction()
+    {
+        var workerPool = CreateWorkerPool();
+        var shutdownCoord = new ServerShutdownCoordinator(
+            workerPool,
+            new InMemorySnapshotStore(),
+            TimeProvider.System,
+            TimeSpan.FromSeconds(5));
+
+        Assert.IsAssignableFrom<IServerShutdownCoordinator>(shutdownCoord);
     }
 
     private static InboundMessage CreateItemMessage(

@@ -1,62 +1,85 @@
 namespace GameServer.Lifecycle;
 
+using GameServer.Endpoint;
 using GameServer.Messaging;
 using GameServer.Resharding;
 using GameServer.Scaling;
 
 public sealed record ServerShutdownResult(bool CompletedGracefully, int SavedSnapshotCount);
 
-public sealed class ServerShutdownCoordinator
+public sealed class ServerShutdownCoordinator : IServerShutdownCoordinator
 {
-    private readonly WorkerPool _workerPool;
+    private static readonly TimeSpan PollInterval = TimeSpan.FromMilliseconds(5);
+    private readonly IWorkerPool _workerPool;
     private readonly ISnapshotStore _snapshotStore;
     private readonly TimeProvider _timeProvider;
     private readonly TimeSpan _softStopTimeout;
+    private readonly IEndpoint? _endpoint;
 
     public ServerShutdownCoordinator(
-        WorkerPool workerPool,
+        IWorkerPool workerPool,
         ISnapshotStore snapshotStore,
         TimeProvider timeProvider,
         TimeSpan softStopTimeout)
+        : this(workerPool, snapshotStore, timeProvider, softStopTimeout, null)
     {
-        _workerPool = workerPool ?? throw new ArgumentNullException(nameof(workerPool));
-        _snapshotStore = snapshotStore ?? throw new ArgumentNullException(nameof(snapshotStore));
-        _timeProvider = timeProvider ?? throw new ArgumentNullException(nameof(timeProvider));
+    }
 
-        if (softStopTimeout <= TimeSpan.Zero)
-        {
-            throw new ArgumentOutOfRangeException(nameof(softStopTimeout), softStopTimeout, "Soft stop timeout must be positive.");
-        }
+    public ServerShutdownCoordinator(
+        IWorkerPool workerPool,
+        ISnapshotStore snapshotStore,
+        TimeProvider timeProvider,
+        TimeSpan softStopTimeout,
+        IEndpoint? endpoint)
+    {
+        ArgumentNullException.ThrowIfNull(workerPool);
+        ArgumentNullException.ThrowIfNull(snapshotStore);
+        ArgumentNullException.ThrowIfNull(timeProvider);
+        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(softStopTimeout, TimeSpan.Zero, nameof(softStopTimeout));
 
+        _workerPool = workerPool;
+        _snapshotStore = snapshotStore;
+        _timeProvider = timeProvider;
         _softStopTimeout = softStopTimeout;
+        _endpoint = endpoint;
+    }
+
+    public void SealAcceptance()
+    {
+        _endpoint?.SealAcceptance();
     }
 
     public ServerShutdownResult SoftStop()
     {
+        _endpoint?.SealAcceptance();
         RequestWorkersSeal();
 
         var shutdownDeadline = _timeProvider.GetUtcNow() + _softStopTimeout;
 
-        while (_timeProvider.GetUtcNow() < shutdownDeadline)
+        while (_timeProvider.GetUtcNow() < shutdownDeadline && !AreAllWorkersDrained())
         {
-            if (AreAllWorkersDrained())
-            {
-                _workerPool.StopAll();
-
-                return new ServerShutdownResult(true, _snapshotStore.SavedSnapshotCount);
-            }
-
             Thread.Sleep(PollInterval);
         }
 
-        return HardStop();
+        var completedGracefully = AreAllWorkersDrained();
+        _workerPool.StopAll();
+
+        return new ServerShutdownResult(completedGracefully, _snapshotStore.SavedSnapshotCount);
     }
 
     public ServerShutdownResult HardStop()
     {
+        _endpoint?.SealAcceptance();
         _workerPool.StopAll();
 
         return new ServerShutdownResult(false, _snapshotStore.SavedSnapshotCount);
+    }
+
+    public ServerShutdownResult Restart()
+    {
+        var stopResult = SoftStop();
+        _endpoint?.ResumeAcceptance();
+        return stopResult;
     }
 
     private void RequestWorkersSeal()
@@ -71,11 +94,8 @@ public sealed class ServerShutdownCoordinator
 
     private bool AreAllWorkersDrained()
     {
-        var workerStatistics = _workerPool.CollectStatistics();
-
-        return workerStatistics.Count > 0
-            && workerStatistics.All(statistics => _workerPool.IsWorkerDrained(statistics.ThreadId));
+        return _workerPool
+            .CollectStatistics()
+            .All(statistics => _workerPool.IsWorkerDrained(statistics.ThreadId));
     }
-
-    private static readonly TimeSpan PollInterval = TimeSpan.FromMilliseconds(20);
 }

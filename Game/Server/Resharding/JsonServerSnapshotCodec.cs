@@ -1,9 +1,8 @@
 using System.Text;
 using System.Text.Json;
+using GameServer.Games;
 
 namespace GameServer.Resharding;
-
-using GameServer.Games;
 
 public sealed class JsonServerSnapshotCodec : ISnapshotCodec
 {
@@ -12,24 +11,31 @@ public sealed class JsonServerSnapshotCodec : ISnapshotCodec
     private const string ItemsFieldName = "items";
     private const string ItemIdFieldName = "itemId";
     private const string PropertiesFieldName = "properties";
+    private const string QueuedCommandsFieldName = "queuedCommands";
 
     public string Serialize(GameSnapshot snapshot)
     {
         ArgumentNullException.ThrowIfNull(snapshot);
 
-        using var propertiesStream = new MemoryStream();
-        using (var writer = new Utf8JsonWriter(propertiesStream))
+        using var memoryStream = new MemoryStream();
+        using (var writer = new Utf8JsonWriter(memoryStream))
         {
             WriteSnapshot(writer, snapshot);
         }
 
-        return Encoding.UTF8.GetString(propertiesStream.ToArray());
+        return Encoding.UTF8.GetString(memoryStream.ToArray());
     }
 
     public GameSnapshot Deserialize(string payload)
     {
-        using var payloadDocument = JsonDocument.Parse(payload);
-        var payloadRoot = payloadDocument.RootElement;
+        ArgumentException.ThrowIfNullOrWhiteSpace(payload);
+
+        using var document = JsonDocument.Parse(payload);
+        var payloadRoot = document.RootElement;
+
+        var queuedCommands = payloadRoot.TryGetProperty(QueuedCommandsFieldName, out var commandArray) && commandArray.ValueKind == JsonValueKind.Array
+            ? commandArray.EnumerateArray().Select(element => element.GetString()!).ToList()
+            : [];
 
         return new GameSnapshot(
             RequiredString(payloadRoot, GameIdFieldName),
@@ -37,7 +43,8 @@ public sealed class JsonServerSnapshotCodec : ISnapshotCodec
             payloadRoot.GetProperty(ItemsFieldName)
                 .EnumerateArray()
                 .Select(ParseItemSnapshot)
-                .ToList());
+                .ToList(),
+            queuedCommands);
     }
 
     private static void WriteSnapshot(Utf8JsonWriter writer, GameSnapshot snapshot)
@@ -47,17 +54,34 @@ public sealed class JsonServerSnapshotCodec : ISnapshotCodec
         writer.WriteString(PriorityFieldName, snapshot.Priority.ToString());
         writer.WriteStartArray(ItemsFieldName);
 
-        snapshot.Items.ToList().ForEach(item =>
+        foreach (var item in snapshot.Items)
         {
             writer.WriteStartObject();
             writer.WriteString(ItemIdFieldName, item.ItemId);
             writer.WritePropertyName(PropertiesFieldName);
             writer.WriteRawValue(item.SerializedProperties);
             writer.WriteEndObject();
-        });
+        }
 
         writer.WriteEndArray();
+
+        WriteQueuedCommandsIfAny(writer, snapshot.QueuedCommands);
+
         writer.WriteEndObject();
+    }
+
+    private static void WriteQueuedCommandsIfAny(Utf8JsonWriter writer, IReadOnlyList<string>? commands)
+    {
+        while ((commands?.Count ?? 0) > 0)
+        {
+            writer.WriteStartArray(QueuedCommandsFieldName);
+            foreach (var command in commands!)
+            {
+                writer.WriteStringValue(command);
+            }
+            writer.WriteEndArray();
+            break;
+        }
     }
 
     private static GameObjectSnapshot ParseItemSnapshot(JsonElement itemElement)
@@ -73,10 +97,8 @@ public sealed class JsonServerSnapshotCodec : ISnapshotCodec
             ?? throw new ArgumentException($"Snapshot field '{fieldName}' must not be null.");
     }
 
-    private static GamePriority ParsePriority(string priorityName)
+    private static GamePriority ParsePriority(string priorityString)
     {
-        return Enum.TryParse<GamePriority>(priorityName, out var parsedPriority)
-            ? parsedPriority
-            : throw new ArgumentException($"Snapshot priority '{priorityName}' is not recognized.");
+        return Enum.Parse<GamePriority>(priorityString, ignoreCase: true);
     }
 }

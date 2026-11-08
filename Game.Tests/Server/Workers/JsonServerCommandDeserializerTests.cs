@@ -1,7 +1,11 @@
 namespace Game.Tests.Server.Workers;
 
+using Game;
+using Game.Commands;
+using Game.IoC;
 using GameServer.Games;
 using GameServer.Games.Pipeline;
+using GameServer.IoC;
 using GameServer.Messaging;
 using GameServer.Workers;
 using Game = GameServer.Games.Game;
@@ -94,5 +98,69 @@ public class JsonServerCommandDeserializerTests
         _deserializer.Deserialize(message, targetGame).Execute();
 
         Assert.True(targetGame.IsAwaitingExternalEvent);
+    }
+
+    [Fact]
+    public void Deserializer_UsesGamesCreateItemStrategy_WhenRegisteredInIoC()
+    {
+        new InitCommand().Execute();
+        var testScope = Ioc.Resolve<object>("IoC.Scope.Create");
+        Ioc.Resolve<ICommand>("IoC.Scope.Current.Set", testScope).Execute();
+
+        new RegisterIoCDependencyGameItemPipeline().Execute();
+
+        var deserializer = new JsonServerCommandDeserializer(new FixedTimeProvider(TestTimestamp));
+        var game = new Game("game-ioc-1", GamePriority.Normal, new Scope());
+
+        var message = new InboundMessage(
+            0,
+            "game-ioc-1",
+            "token",
+            ServerCommandNames.CreateItem,
+            """{"itemId":"item1","type":"Tank","position":[10,20],"speed":[1,2]}""");
+
+        var command = deserializer.Deserialize(message, game);
+        Assert.NotNull(command);
+
+        command.Execute();
+
+        Assert.True(game.Scope.Contains("item1"));
+        var item = game.Scope.GetItem("item1");
+        Assert.Equal("Tank", item.GetProperty(GameItemProperty.DomainType));
+        Assert.Equal(new Vector([10, 20]), item.GetProperty(GameItemProperty.Position));
+    }
+
+    [Fact]
+    public void JsonServerCommandDeserializer_AllowsCustomCommands_AndIoCResolution()
+    {
+        var deserializer = new JsonServerCommandDeserializer();
+        var game = new Game("game-1", GamePriority.Normal, new Scope());
+
+        bool customCommandExecuted = false;
+        deserializer.RegisterCommandFactory("Rotate", (json, g) =>
+        {
+            return new ActionCommand(() => customCommandExecuted = true);
+        });
+
+        var message = new InboundMessage(0, "game-1", "tok", "Rotate", "{}");
+        var cmd = deserializer.Deserialize(message, game);
+        cmd.Execute();
+        Assert.True(customCommandExecuted);
+
+        bool iocCommandExecuted = false;
+        Ioc.Resolve<ICommand>("IoC.Register", "Server.Commands.Fire", (Func<object[], object>)(args =>
+        {
+            return new ActionCommand(() => iocCommandExecuted = true);
+        })).Execute();
+
+        var fireMessage = new InboundMessage(0, "game-1", "tok", "Fire", "{}");
+        var fireCmd = deserializer.Deserialize(fireMessage, game);
+        fireCmd.Execute();
+        Assert.True(iocCommandExecuted);
+    }
+
+    private sealed class ActionCommand(Action action) : ICommand
+    {
+        public void Execute() => action();
     }
 }

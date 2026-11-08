@@ -1,45 +1,63 @@
 namespace GameServer.Workers;
 
+using System.Collections.Frozen;
+using Game.Commands;
+using Game.IoC;
 using GameServer.Games;
+using GameServer.Messaging;
 using Game = GameServer.Games.Game;
 
 public sealed class PriorityRoundRobinScheduler : IGameScheduler
 {
-    private readonly GameWorkerSettings _settings;
-    private readonly CommandRateLimiter _rateLimiter;
-    private readonly IGameTerminationObserver _terminationObserver;
     private readonly Dictionary<string, Game> _gamesById = new();
+    private readonly HashSet<string> _readyGameIds = new();
     private readonly Queue<Game> _readyHighPriorityGames = new();
     private readonly Queue<Game> _readyNormalPriorityGames = new();
-    private readonly HashSet<string> _readyGameIds = new();
+    private readonly FrozenDictionary<GamePriority, Queue<Game>> _readyRingsByPriority;
+    private readonly GameWorkerSettings _settings;
+    private readonly IGameRateLimiter _rateLimiter;
+    private readonly IGameTerminationObserver _terminationObserver;
+
+    public event Action<ICommand, Exception>? CommandExecutionFailed;
 
     public PriorityRoundRobinScheduler(
         GameWorkerSettings settings,
-        CommandRateLimiter rateLimiter,
+        IGameRateLimiter rateLimiter,
         IGameTerminationObserver terminationObserver)
     {
-        _settings = settings ?? throw new ArgumentNullException(nameof(settings));
-        _rateLimiter = rateLimiter ?? throw new ArgumentNullException(nameof(rateLimiter));
-        _terminationObserver = terminationObserver ?? throw new ArgumentNullException(nameof(terminationObserver));
+        ArgumentNullException.ThrowIfNull(settings);
+        ArgumentNullException.ThrowIfNull(rateLimiter);
+        ArgumentNullException.ThrowIfNull(terminationObserver);
+
+        _settings = settings;
+        _rateLimiter = rateLimiter;
+        _terminationObserver = terminationObserver;
+        _readyRingsByPriority = new Dictionary<GamePriority, Queue<Game>>
+        {
+            [GamePriority.High] = _readyHighPriorityGames,
+            [GamePriority.Normal] = _readyNormalPriorityGames
+        }.ToFrozenDictionary();
     }
 
     public int RegisteredGameCount => _gamesById.Count;
 
+    public int ReadyGameCount => _readyGameIds.Count;
+
     public int TotalQueuedCommandCount => _gamesById.Values.Sum(game => game.CommandQueue.Count);
+
+    public bool HasReadyCommands => ReadyGameCount > 0;
+
+    public IReadOnlyCollection<string> RegisteredGameIds => _gamesById.Keys;
 
     public void Register(Game game)
     {
         ArgumentNullException.ThrowIfNull(game);
 
-        if (!_gamesById.TryAdd(game.GameId, game))
-        {
-            throw new InvalidOperationException($"Game '{game.GameId}' is already registered in the scheduler.");
-        }
+        _ = _gamesById.TryAdd(game.GameId, game)
+            ? 0
+            : throw new InvalidOperationException($"Game '{game.GameId}' is already registered in the scheduler.");
 
-        if (game.CommandQueue.HasCommands)
-        {
-            EnqueueReady(game);
-        }
+        _ = game.CommandQueue.HasCommands && EnqueueReady(game);
     }
 
     public Game? FindGame(string gameId)
@@ -51,30 +69,65 @@ public sealed class PriorityRoundRobinScheduler : IGameScheduler
     {
         ArgumentNullException.ThrowIfNull(game);
 
-        if (!game.IsAwaitingExternalEvent)
-        {
-            EnqueueReady(game);
-        }
+        _ = !game.IsAwaitingExternalEvent && EnqueueReady(game);
     }
 
     public ScheduleOutcome ScheduleCycle(DateTimeOffset currentTime)
     {
         var terminatedGameIds = TerminateExpiredAwaitingGames(currentTime);
-        var highPriorityOutcome = DispatchFromRing(_readyHighPriorityGames, currentTime);
-        var normalPriorityOutcome = DispatchFromRing(_readyNormalPriorityGames, currentTime);
+
+        var highSnapshot = DrainRingSnapshot(_readyHighPriorityGames);
+        var normalSnapshot = DrainRingSnapshot(_readyNormalPriorityGames);
+
+        int highPriorityIndex = 0;
+        int normalPriorityIndex = 0;
+        int dispatchedCommandCount = 0;
+        int failedCommandCount = 0;
+
+        const int HighToNormalRatio = 3;
+
+        while (highPriorityIndex < highSnapshot.Length || normalPriorityIndex < normalSnapshot.Length)
+        {
+            int highPriorityBatchCount = 0;
+            while (highPriorityIndex < highSnapshot.Length && (highPriorityBatchCount < HighToNormalRatio || normalPriorityIndex >= normalSnapshot.Length))
+            {
+                var (dispatched, failed) = ServeGame(highSnapshot[highPriorityIndex++], currentTime, _readyHighPriorityGames);
+                dispatchedCommandCount += dispatched;
+                failedCommandCount += failed;
+                highPriorityBatchCount++;
+            }
+
+            while (normalPriorityIndex < normalSnapshot.Length)
+            {
+                var (dispatched, failed) = ServeGame(normalSnapshot[normalPriorityIndex++], currentTime, _readyNormalPriorityGames);
+                dispatchedCommandCount += dispatched;
+                failedCommandCount += failed;
+                break;
+            }
+        }
 
         return new ScheduleOutcome(
-            highPriorityOutcome.DispatchedCommandCount + normalPriorityOutcome.DispatchedCommandCount,
-            highPriorityOutcome.FailedCommandCount + normalPriorityOutcome.FailedCommandCount,
+            dispatchedCommandCount,
+            failedCommandCount,
             terminatedGameIds);
+    }
+
+    private Game[] DrainRingSnapshot(Queue<Game> readyRing)
+    {
+        var ringSnapshot = readyRing.ToArray();
+        readyRing.Clear();
+        foreach (var game in ringSnapshot)
+        {
+            _readyGameIds.Remove(game.GameId);
+        }
+        return ringSnapshot;
     }
 
     public void Unregister(string gameId, GameTerminationReason terminationReason)
     {
-        if (!_gamesById.Remove(gameId))
-        {
-            throw new KeyNotFoundException($"Game '{gameId}' is not registered in the scheduler.");
-        }
+        _ = _gamesById.Remove(gameId)
+            ? 0
+            : throw new KeyNotFoundException($"Game '{gameId}' is not registered in the scheduler.");
 
         _readyGameIds.Remove(gameId);
         _terminationObserver.NotifyGameTerminated(gameId, terminationReason);
@@ -87,76 +140,85 @@ public sealed class PriorityRoundRobinScheduler : IGameScheduler
             .Select(game => game.GameId)
             .ToList();
 
-        expiredGameIds.ForEach(gameId => Unregister(gameId, GameTerminationReason.WatchdogAwaitTimeout));
+        foreach (var gameId in expiredGameIds)
+        {
+            Unregister(gameId, GameTerminationReason.WatchdogAwaitTimeout);
+        }
 
         return expiredGameIds;
     }
 
-    private (int DispatchedCommandCount, int FailedCommandCount) DispatchFromRing(Queue<Game> readyRing, DateTimeOffset currentTime)
-    {
-        var ringSnapshot = readyRing.ToArray();
-        readyRing.Clear();
-        Array.ForEach(ringSnapshot, game => _readyGameIds.Remove(game.GameId));
-
-        var perGameOutcomes = ringSnapshot.Select(game => ServeGame(game, currentTime, readyRing)).ToList();
-
-        return (
-            perGameOutcomes.Sum(outcome => outcome.DispatchedCommandCount),
-            perGameOutcomes.Sum(outcome => outcome.FailedCommandCount));
-    }
-
     private (int DispatchedCommandCount, int FailedCommandCount) ServeGame(Game game, DateTimeOffset currentTime, Queue<Game> readyRing)
     {
-        if (!_gamesById.ContainsKey(game.GameId))
-        {
-            return (0, 0);
-        }
+        var isKnown = _gamesById.ContainsKey(game.GameId);
+        var admitted = isKnown && _rateLimiter.TryAdmit(game.GameId, currentTime);
 
-        if (!_rateLimiter.TryAdmit(game.GameId, currentTime))
-        {
-            EnqueueReadyInto(readyRing, game);
-            return (0, 0);
-        }
+        _ = isKnown && !admitted && EnqueueReadyInto(readyRing, game);
 
-        var commandBatch = game.CommandQueue.DequeueBatch(_settings.CommandQuantumPerGameActivation);
-        var executionResults = commandBatch.Select(ExecuteCommandSafely).ToList();
-
-        if (game.CommandQueue.HasCommands && !game.IsAwaitingExternalEvent)
-        {
-            EnqueueReadyInto(readyRing, game);
-        }
-
-        return (executionResults.Count(executed => executed), executionResults.Count(executed => !executed));
+        return isKnown && admitted
+            ? ExecuteGameBatch(game, readyRing)
+            : (0, 0);
     }
 
-    private static bool ExecuteCommandSafely(ICommand command)
+    private (int DispatchedCommandCount, int FailedCommandCount) ExecuteGameBatch(Game game, Queue<Game> readyRing)
     {
+        object? previousScope = null;
+        var gameIocScope = game.Scope.IocScope;
+
+        while (gameIocScope is not null)
+        {
+            try
+            {
+                previousScope = Ioc.Resolve<object>("IoC.Scope.Current");
+                Ioc.Resolve<ICommand>("IoC.Scope.Current.Set", gameIocScope!).Execute();
+            }
+            catch
+            {
+            }
+            break;
+        }
+
         try
         {
-            command.Execute();
-            return true;
+            var (dispatched, failed) = game.ExecuteBatch(
+                _settings.CommandQuantumPerGameActivation,
+                (command, exception) => CommandExecutionFailed?.Invoke(command, exception));
+
+            _ = game.CommandQueue.HasCommands && !game.IsAwaitingExternalEvent && EnqueueReadyInto(readyRing, game);
+
+            return (dispatched, failed);
         }
-        catch (Exception)
+        finally
         {
-            return false;
+            while (previousScope is not null)
+            {
+                try
+                {
+                    Ioc.Resolve<ICommand>("IoC.Scope.Current.Set", previousScope!).Execute();
+                }
+                catch
+                {
+                }
+                break;
+            }
         }
     }
 
-    private void EnqueueReady(Game game)
+    private bool EnqueueReady(Game game)
     {
-        EnqueueReadyInto(RingForPriority(game.Priority), game);
+        return EnqueueReadyInto(_readyRingsByPriority[game.Priority], game);
     }
 
-    private void EnqueueReadyInto(Queue<Game> readyRing, Game game)
+    private bool EnqueueReadyInto(Queue<Game> readyRing, Game game)
     {
-        if (_readyGameIds.Add(game.GameId))
-        {
-            readyRing.Enqueue(game);
-        }
+        var shouldEnqueue = _readyGameIds.Add(game.GameId);
+        _ = shouldEnqueue && EnqueueDirect(readyRing, game);
+        return shouldEnqueue;
     }
 
-    private Queue<Game> RingForPriority(GamePriority priority)
+    private static bool EnqueueDirect(Queue<Game> readyRing, Game game)
     {
-        return priority == GamePriority.High ? _readyHighPriorityGames : _readyNormalPriorityGames;
+        readyRing.Enqueue(game);
+        return true;
     }
 }

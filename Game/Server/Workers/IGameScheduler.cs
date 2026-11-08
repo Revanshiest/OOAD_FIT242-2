@@ -11,11 +11,17 @@ public interface IGameScheduler
 {
     int TotalQueuedCommandCount { get; }
 
+    bool HasReadyCommands { get; }
+
+    event Action<ICommand, Exception>? CommandExecutionFailed;
+
     void Register(Game game);
 
     Game? FindGame(string gameId);
 
     int RegisteredGameCount { get; }
+
+    IReadOnlyCollection<string> RegisteredGameIds { get; }
 
     void NotifyCommandsQueued(Game game);
 

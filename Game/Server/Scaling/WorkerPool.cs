@@ -1,10 +1,10 @@
-using System.Collections.Concurrent;
-
 namespace GameServer.Scaling;
 
+using System.Collections.Concurrent;
 using GameServer.Games;
 using GameServer.Messaging;
 using GameServer.Resharding;
+using GameServer.Routing;
 using GameServer.Workers;
 
 public sealed record WorkerStatistics(
@@ -13,9 +13,13 @@ public sealed record WorkerStatistics(
     int PendingInputMessages,
     int TotalQueuedCommandCount);
 
-public sealed class WorkerPool : ITransitResolver, IWorkerMessagePoster
+public sealed class WorkerPool : IWorkerPool
 {
-    public const int DefaultInputQueueCapacity = 4096;
+    public const int DefaultInputQueueCapacity = 65536;
+
+    private readonly ConcurrentDictionary<int, WorkerCell> _cellsByThreadId = new();
+    private readonly List<PrimaryRouter> _attachedRouters = new();
+    private readonly object _routerLock = new();
     private readonly GameWorkerSettings _settings;
     private readonly TimeProvider _timeProvider;
     private readonly IGameTerminationObserver _terminationObserver;
@@ -24,7 +28,7 @@ public sealed class WorkerPool : ITransitResolver, IWorkerMessagePoster
     private readonly ISnapshotCodec _snapshotCodec;
     private readonly ITransitOverflowSink _overflowSink;
     private readonly ISnapshotStore _snapshotStore;
-    private readonly ConcurrentDictionary<int, WorkerCell> _cellsByThreadId = new();
+    private readonly IWorkerHostFactory _workerHostFactory;
     private int _nextThreadId;
 
     public WorkerPool(
@@ -36,15 +40,49 @@ public sealed class WorkerPool : ITransitResolver, IWorkerMessagePoster
         ISnapshotCodec snapshotCodec,
         ITransitOverflowSink overflowSink,
         ISnapshotStore snapshotStore)
+        : this(
+            settings,
+            timeProvider,
+            terminationObserver,
+            commandDeserializer,
+            gameFactory,
+            snapshotCodec,
+            overflowSink,
+            snapshotStore,
+            new DefaultWorkerHostFactory())
     {
-        _settings = settings ?? throw new ArgumentNullException(nameof(settings));
-        _timeProvider = timeProvider ?? throw new ArgumentNullException(nameof(timeProvider));
-        _terminationObserver = terminationObserver ?? throw new ArgumentNullException(nameof(terminationObserver));
-        _commandDeserializer = commandDeserializer ?? throw new ArgumentNullException(nameof(commandDeserializer));
-        _gameFactory = gameFactory ?? throw new ArgumentNullException(nameof(gameFactory));
-        _snapshotCodec = snapshotCodec ?? throw new ArgumentNullException(nameof(snapshotCodec));
-        _overflowSink = overflowSink ?? throw new ArgumentNullException(nameof(overflowSink));
-        _snapshotStore = snapshotStore ?? throw new ArgumentNullException(nameof(snapshotStore));
+    }
+
+    public WorkerPool(
+        GameWorkerSettings settings,
+        TimeProvider timeProvider,
+        IGameTerminationObserver terminationObserver,
+        IServerCommandDeserializer commandDeserializer,
+        IGameFactory gameFactory,
+        ISnapshotCodec snapshotCodec,
+        ITransitOverflowSink overflowSink,
+        ISnapshotStore snapshotStore,
+        IWorkerHostFactory workerHostFactory)
+    {
+        ArgumentNullException.ThrowIfNull(settings);
+        ArgumentNullException.ThrowIfNull(timeProvider);
+        ArgumentNullException.ThrowIfNull(terminationObserver);
+        ArgumentNullException.ThrowIfNull(commandDeserializer);
+        ArgumentNullException.ThrowIfNull(gameFactory);
+        ArgumentNullException.ThrowIfNull(snapshotCodec);
+        ArgumentNullException.ThrowIfNull(overflowSink);
+        ArgumentNullException.ThrowIfNull(snapshotStore);
+        ArgumentNullException.ThrowIfNull(workerHostFactory);
+
+        _settings = settings;
+        _timeProvider = timeProvider;
+        _terminationObserver = terminationObserver;
+        _commandDeserializer = commandDeserializer;
+        _gameFactory = gameFactory;
+        _snapshotCodec = snapshotCodec;
+        _overflowSink = overflowSink;
+        _snapshotStore = snapshotStore;
+        _workerHostFactory = workerHostFactory;
     }
 
     public int WorkerCount => _cellsByThreadId.Count;
@@ -52,65 +90,107 @@ public sealed class WorkerPool : ITransitResolver, IWorkerMessagePoster
     public int StartWorker()
     {
         var threadId = Interlocked.Increment(ref _nextThreadId) - 1;
-        var inputQueue = new BoundedMessageQueue<InboundMessage>(DefaultInputQueueCapacity);
-        var scheduler = new PriorityRoundRobinScheduler(
+        var cell = _workerHostFactory.CreateWorkerCell(
+            threadId,
             _settings,
-            new CommandRateLimiter(_settings.RateLimitBucketCapacity, _settings.RateLimitTokensPerSecond),
-            _terminationObserver);
-        var workerSupportServices = new GameWorkerSupportServices(
+            _timeProvider,
+            _terminationObserver,
+            _commandDeserializer,
+            _gameFactory,
             _snapshotCodec,
             this,
             _overflowSink,
             _snapshotStore);
-        var worker = new GameWorker(
-            inputQueue,
-            scheduler,
-            _commandDeserializer,
-            _gameFactory,
-            _settings,
-            workerSupportServices);
-        var workerHost = new WorkerThreadHost(threadId, worker, inputQueue, _timeProvider);
 
-        workerHost.Start();
-        _cellsByThreadId[threadId] = new WorkerCell(workerHost, scheduler, inputQueue);
+        cell.WorkerHost.Start();
+        (_overflowSink as BackupTransitThread)?.Start();
+
+        _cellsByThreadId[threadId] = cell;
+
+        lock (_routerLock)
+        {
+            foreach (var router in _attachedRouters)
+            {
+                router.RegisterWorker(threadId, cell.InputQueue);
+            }
+        }
 
         return threadId;
     }
 
+    public void AttachRouter(PrimaryRouter router)
+    {
+        ArgumentNullException.ThrowIfNull(router);
+
+        lock (_routerLock)
+        {
+            _attachedRouters.Add(router);
+            foreach (var (threadId, cell) in _cellsByThreadId)
+            {
+                router.RegisterWorker(threadId, cell.InputQueue);
+            }
+        }
+    }
+
+    public void ScaleDownWorker(int sourceThreadId, int targetThreadId, IGameMigrationCoordinator coordinator)
+    {
+        ArgumentNullException.ThrowIfNull(coordinator);
+
+        var sourceCell = _cellsByThreadId.GetValueOrDefault(sourceThreadId)
+            ?? throw new KeyNotFoundException($"Worker '{sourceThreadId}' is not running in the pool.");
+
+        _ = _cellsByThreadId.ContainsKey(targetThreadId)
+            ? 0
+            : throw new KeyNotFoundException($"Target worker '{targetThreadId}' is not running in the pool.");
+
+        foreach (var gameId in sourceCell.Scheduler.RegisteredGameIds)
+        {
+            coordinator.BeginThreadMigration(new GameMigrationRequest(gameId, sourceThreadId, targetThreadId));
+        }
+    }
+
     public void StopWorker(int threadId)
     {
-        if (!_cellsByThreadId.TryRemove(threadId, out var removedCell))
+        var hasCell = _cellsByThreadId.TryRemove(threadId, out var removedCell);
+        _ = hasCell
+            ? 0
+            : throw new KeyNotFoundException($"Worker '{threadId}' is not running in the pool.");
+
+        lock (_routerLock)
         {
-            throw new KeyNotFoundException($"Worker '{threadId}' is not running in the pool.");
+            foreach (var router in _attachedRouters)
+            {
+                router.UnregisterWorker(threadId);
+            }
         }
 
-        removedCell.WorkerHost.Stop();
+        removedCell!.WorkerHost.Stop();
         removedCell.WorkerHost.Join();
+    }
+
+    public void StopAll()
+    {
+        var threadIds = _cellsByThreadId.Keys.ToList();
+        foreach (var threadId in threadIds)
+        {
+            StopWorker(threadId);
+        }
+
+        (_overflowSink as BackupTransitThread)?.Stop();
     }
 
     public bool TryPost(int threadId, InboundMessage message)
     {
         ArgumentNullException.ThrowIfNull(message);
 
-        return _cellsByThreadId.TryGetValue(threadId, out var targetCell) && targetCell.InputQueue.TryWrite(message);
-    }
-
-    public IMessageQueueWriter<InboundMessage> ResolveWriter(int threadId)
-    {
-        return _cellsByThreadId.TryGetValue(threadId, out var targetCell)
-            ? targetCell.InputQueue
-            : throw new KeyNotFoundException($"Worker '{threadId}' is not running in the pool.");
-    }
-
-    public bool IsWorkerDrained(int threadId)
-    {
-        return _cellsByThreadId.TryGetValue(threadId, out var targetCell) && targetCell.WorkerHost.IsShutdownCompleted;
+        var targetCell = _cellsByThreadId.GetValueOrDefault(threadId);
+        return targetCell is not null && targetCell.InputQueue.TryWrite(message);
     }
 
     public IScope? TryGetGameScope(int threadId, string gameId)
     {
-        return _cellsByThreadId.TryGetValue(threadId, out var targetCell)
-            ? targetCell.Scheduler.FindGame(gameId)?.Scope
+        return _cellsByThreadId.TryGetValue(threadId, out var cell)
+            ? cell.Scheduler.FindGame(gameId)?.Scope
             : null;
     }
 
@@ -122,17 +202,21 @@ public sealed class WorkerPool : ITransitResolver, IWorkerMessagePoster
                 cell.Scheduler.RegisteredGameCount,
                 cell.InputQueue.PendingCount,
                 cell.Scheduler.TotalQueuedCommandCount))
-            .OrderBy(statistics => statistics.ThreadId)
             .ToList();
     }
 
-    public void StopAll()
+    public bool IsWorkerDrained(int threadId)
     {
-        _cellsByThreadId.Keys.ToList().ForEach(StopWorker);
+        var targetCell = _cellsByThreadId.GetValueOrDefault(threadId);
+        return targetCell is not null
+            && targetCell.InputQueue.PendingCount == 0
+            && targetCell.WorkerHost.IsShutdownCompleted;
     }
 
-    private sealed record WorkerCell(
-        WorkerThreadHost WorkerHost,
-        PriorityRoundRobinScheduler Scheduler,
-        BoundedMessageQueue<InboundMessage> InputQueue);
+    public IMessageQueueWriter<InboundMessage> ResolveWriter(int threadId)
+    {
+        var targetCell = _cellsByThreadId.GetValueOrDefault(threadId);
+        return targetCell?.InputQueue
+            ?? throw new KeyNotFoundException($"Worker '{threadId}' is not present in the worker pool.");
+    }
 }

@@ -1,5 +1,6 @@
 namespace Game.Tests.Server.Workers;
 
+using System.Collections.Concurrent;
 using GameServer.Workers;
 
 public class CommandRateLimiterTests
@@ -90,5 +91,37 @@ public class CommandRateLimiterTests
         var rateLimiter = new CommandRateLimiter(1, 0);
 
         Assert.Throws<ArgumentException>(() => rateLimiter.TryAdmit("  ", TestTimestamp));
+    }
+
+    [Fact]
+    public void CommandRateLimiter_HandlesHighConcurrencyWithoutDataRaceOrCorruption()
+    {
+        var limiter = new CommandRateLimiter(bucketCapacity: 100, tokensRefilledPerSecond: 1000);
+        const int threadCount = 16;
+        const int callsPerThread = 500;
+        var exceptions = new ConcurrentBag<Exception>();
+        var totalAdmitted = 0;
+
+        Parallel.For(0, threadCount, threadIndex =>
+        {
+            try
+            {
+                var gameId = $"game-{threadIndex % 4}";
+                for (var i = 0; i < callsPerThread; i++)
+                {
+                    if (limiter.TryAdmit(gameId, TestTimestamp.AddMilliseconds(i)))
+                    {
+                        Interlocked.Increment(ref totalAdmitted);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                exceptions.Add(ex);
+            }
+        });
+
+        Assert.Empty(exceptions);
+        Assert.True(totalAdmitted > 0);
     }
 }

@@ -2,46 +2,62 @@ namespace GameServer.Workers;
 
 using GameServer.Messaging;
 
-public sealed class WorkerThreadHost
+public sealed class WorkerThreadHost : IWorkerThreadHost
 {
-    public static readonly TimeSpan WorkerIdlePollInterval = TimeSpan.FromMilliseconds(50);
-    private readonly GameWorker _worker;
+    private static readonly TimeSpan WorkerIdlePollInterval = TimeSpan.FromMilliseconds(5);
+    private readonly int _threadId;
+    private readonly IGameWorker _worker;
     private readonly TimeProvider _timeProvider;
-    private readonly Thread _thread;
     private readonly CancellationTokenSource _stopSource = new();
+    private readonly Thread _thread;
+    private int _started;
+
+    public event Action<Exception>? UnhandledExceptionOccurred;
 
     public WorkerThreadHost(
         int threadId,
-        GameWorker worker,
-        IMessageQueueWriter<InboundMessage> messageWriter,
+        IGameWorker worker,
+        INonBlockingMessageWriter<InboundMessage> messageWriter,
         TimeProvider timeProvider)
     {
-        _worker = worker ?? throw new ArgumentNullException(nameof(worker));
-        _timeProvider = timeProvider ?? throw new ArgumentNullException(nameof(timeProvider));
-        MessageWriter = messageWriter ?? throw new ArgumentNullException(nameof(messageWriter));
-        ThreadId = threadId;
+        ArgumentOutOfRangeException.ThrowIfNegative(threadId, nameof(threadId));
+        ArgumentNullException.ThrowIfNull(worker);
+        ArgumentNullException.ThrowIfNull(messageWriter);
+        ArgumentNullException.ThrowIfNull(timeProvider);
 
+        _threadId = threadId;
+        _worker = worker;
+        MessageWriter = messageWriter;
+        _timeProvider = timeProvider;
         _thread = new Thread(RunLoop)
         {
             IsBackground = true,
-            Name = $"game-worker-{threadId}"
+            Name = $"worker-thread-{threadId}"
         };
     }
 
-    public int ThreadId { get; }
+    public int ThreadId => _threadId;
 
-    public IMessageQueueWriter<InboundMessage> MessageWriter { get; }
+    public INonBlockingMessageWriter<InboundMessage> MessageWriter { get; }
 
     public bool IsShutdownCompleted => _worker.IsShutdownCompleted;
 
+    public Exception? LastUnhandledException { get; private set; }
+
+    public bool IsRunning => Volatile.Read(ref _started) == 1 && !_stopSource.IsCancellationRequested;
+
     public void Start()
     {
-        _thread.Start();
+        var shouldStart = Interlocked.CompareExchange(ref _started, 1, 0) == 0;
+        Action startAction = shouldStart ? _thread.Start : delegate { };
+        startAction();
     }
 
     public void Stop()
     {
-        _stopSource.Cancel();
+        var shouldStop = !_stopSource.IsCancellationRequested;
+        Action stopAction = shouldStop ? _stopSource.Cancel : delegate { };
+        stopAction();
     }
 
     public void Join()
@@ -55,8 +71,11 @@ public sealed class WorkerThreadHost
         {
             while (!_stopSource.IsCancellationRequested)
             {
-                RunProtectedCycle();
-                _worker.WaitForIncomingMessage(WorkerIdlePollInterval, _stopSource.Token);
+                var cycleResult = RunProtectedCycle();
+                var performedWork = cycleResult is not null && (cycleResult.DispatchedCommandCount > 0 || cycleResult.RoutedMessageCount > 0);
+
+                var shouldWait = !performedWork || !_worker.HasReadyWork;
+                _ = shouldWait && WaitForIncomingMessage();
             }
         }
         catch (OperationCanceledException)
@@ -64,14 +83,23 @@ public sealed class WorkerThreadHost
         }
     }
 
-    private void RunProtectedCycle()
+    private bool WaitForIncomingMessage()
+    {
+        _worker.WaitForIncomingMessage(WorkerIdlePollInterval, _stopSource.Token);
+        return true;
+    }
+
+    private WorkerCycleResult? RunProtectedCycle()
     {
         try
         {
-            _worker.ExecuteCycle(_timeProvider.GetUtcNow());
+            return _worker.ExecuteCycle(_timeProvider.GetUtcNow());
         }
-        catch (Exception exception) when (exception is not OperationCanceledException)
+        catch (Exception exception)
         {
+            LastUnhandledException = exception;
+            UnhandledExceptionOccurred?.Invoke(exception);
+            return null;
         }
     }
 }

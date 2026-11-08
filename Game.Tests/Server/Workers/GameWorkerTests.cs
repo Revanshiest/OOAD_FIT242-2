@@ -1,5 +1,7 @@
 namespace Game.Tests.Server.Workers;
 
+using Game.Commands;
+using Game.IoC;
 using GameServer.Games;
 using GameServer.Games.Pipeline;
 using GameServer.Messaging;
@@ -287,6 +289,126 @@ public class GameWorkerTests
     private static InboundMessage MoveMessage(string gameId, string itemId)
     {
         return new InboundMessage(0, gameId, "token", ServerCommandNames.Move, $$"""{"itemId":"{{itemId}}"}""");
+    }
+
+    [Fact]
+    public void GameWorker_AllowsDynamicRegistrationOfControlHandlers_AndResolvesFromIoC()
+    {
+        new InitCommand().Execute();
+        var testScope = Ioc.Resolve<object>("IoC.Scope.Create");
+        Ioc.Resolve<ICommand>("IoC.Scope.Current.Set", testScope).Execute();
+
+        var inputQueue = new BoundedMessageQueue<InboundMessage>(10);
+        var settings = GameWorkerSettings.CreateDefault();
+        var scheduler = new PriorityRoundRobinScheduler(
+            settings,
+            new CommandRateLimiter(settings.RateLimitBucketCapacity, settings.RateLimitTokensPerSecond),
+            NullGameTerminationObserver.Instance);
+
+        var supportServices = new GameWorkerSupportServices(
+            new JsonServerSnapshotCodec(),
+            new FakeTransitResolver(new Dictionary<int, IMessageQueueWriter<InboundMessage>>()),
+            new RecordingOverflowSink(),
+            new InMemorySnapshotStore());
+
+        var worker = new GameWorker(
+            inputQueue,
+            scheduler,
+            new JsonServerCommandDeserializer(new FixedTimeProvider(TestTimestamp)),
+            new DefaultGameFactory(),
+            settings,
+            supportServices);
+
+        bool customHandlerCalled = false;
+        worker.RegisterControlHandler("Server.CustomPing", msg =>
+        {
+            customHandlerCalled = true;
+            return true;
+        });
+
+        inputQueue.TryWrite(new InboundMessage(0, "game-1", "tok", "Server.CustomPing", "{}"));
+        var result = worker.ExecuteCycle(TestTimestamp);
+
+        Assert.True(customHandlerCalled);
+        Assert.Equal(1, result.RoutedMessageCount);
+
+        bool iocHandlerCalled = false;
+        Ioc.Resolve<ICommand>("IoC.Register", "Server.ControlHandler.Server.Inspect", (Func<object[], object>)(args =>
+        {
+            return new Func<InboundMessage, bool>(msg =>
+            {
+                iocHandlerCalled = true;
+                return true;
+            });
+        })).Execute();
+
+        inputQueue.TryWrite(new InboundMessage(0, "game-1", "tok", "Server.Inspect", "{}"));
+        var iocResult = worker.ExecuteCycle(TestTimestamp);
+
+        Assert.True(iocHandlerCalled);
+        Assert.Equal(1, iocResult.RoutedMessageCount);
+    }
+
+    [Fact]
+    public void WorkerCycle_DoesNotCrash_WhenCommandArgumentsAreNotJsonObject()
+    {
+        var (worker, inputQueue, scheduler) = CreateDefaultWorker();
+
+        inputQueue.TryWrite(new InboundMessage(0, "game-invalid", "token", ServerCommandNames.CreateItem, "12345"));
+        inputQueue.TryWrite(new InboundMessage(0, "game-valid", "token", ServerCommandNames.CreateItem,
+            """{"itemId":"item1","type":"Ship","position":[1,2],"speed":[3,4]}"""));
+
+        var result = worker.ExecuteCycle(TestTimestamp);
+
+        Assert.Equal(1, result.RejectedMessageCount);
+        Assert.Equal(1, result.RoutedMessageCount);
+        Assert.NotNull(scheduler.FindGame("game-valid"));
+        Assert.True(scheduler.FindGame("game-valid")!.Scope.Contains("item1"));
+    }
+
+    [Fact]
+    public void WorkerCycle_DoesNotCrash_WhenControlMessageHasCorruptedPayload()
+    {
+        var (worker, inputQueue, _) = CreateDefaultWorker();
+
+        inputQueue.TryWrite(new InboundMessage(0, "game-mig", "system", ServerCommandNames.MigrateOut, "INVALID_NOT_JSON"));
+        inputQueue.TryWrite(new InboundMessage(0, "game-tick", "system", ServerCommandNames.TickMarker, "{corrupted:"));
+
+        var result = worker.ExecuteCycle(TestTimestamp);
+
+        Assert.Equal(2, result.RejectedMessageCount);
+    }
+
+    [Fact]
+    public void GameWorker_HasReadyWork_ReflectsSchedulerReadyCommands()
+    {
+        var (worker, _, scheduler) = CreateDefaultWorker();
+
+        Assert.False(worker.HasReadyWork);
+
+        var game = new Game("game-1", GamePriority.Normal, new Scope());
+        game.CommandQueue.Enqueue(new RecordingCommand());
+        scheduler.Register(game);
+
+        Assert.True(worker.HasReadyWork);
+
+        worker.ExecuteCycle(TestTimestamp);
+
+        Assert.False(worker.HasReadyWork);
+    }
+
+    [Fact]
+    public void GameWorker_RouteAndDispatch_TalliesCountsInSinglePass()
+    {
+        var (worker, inputQueue, _) = CreateDefaultWorker();
+
+        inputQueue.TryWrite(new InboundMessage(0, "missing", "tok", ServerCommandNames.Resume, "{}"));
+        inputQueue.TryWrite(new InboundMessage(0, "g", "tok", "UnknownCommand", "{}"));
+
+        var result = worker.ExecuteCycle(TestTimestamp);
+
+        Assert.Equal(0, result.RoutedMessageCount);
+        Assert.Equal(2, result.RejectedMessageCount);
     }
 
     private (GameWorker Worker, BoundedMessageQueue<InboundMessage> InputQueue, PriorityRoundRobinScheduler Scheduler) CreateDefaultWorker()

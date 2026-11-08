@@ -23,13 +23,10 @@ public sealed class GameWorkerSettings
         ValidateMinimum(rateLimitBucketCapacity, 1, nameof(rateLimitBucketCapacity));
         ValidateMinimum(rateLimitTokensPerSecond, 0, nameof(rateLimitTokensPerSecond));
 
-        if (maxExternalAwaitDuration <= TimeSpan.Zero)
-        {
-            throw new ArgumentOutOfRangeException(
-                nameof(maxExternalAwaitDuration),
-                maxExternalAwaitDuration,
-                "External await duration must be positive.");
-        }
+        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(
+            maxExternalAwaitDuration,
+            TimeSpan.Zero,
+            nameof(maxExternalAwaitDuration));
 
         CommandQuantumPerGameActivation = commandQuantumPerGameActivation;
         MaxQueueLengthPerGame = maxQueueLengthPerGame;
@@ -64,9 +61,6 @@ public sealed class GameWorkerSettings
 
     private static void ValidateMinimum(double fieldValue, double minimumValue, string fieldName)
     {
-        if (fieldValue < minimumValue)
-        {
-            throw new ArgumentOutOfRangeException(fieldName, fieldValue, $"{fieldName} must be at least {minimumValue}.");
-        }
+        ArgumentOutOfRangeException.ThrowIfLessThan(fieldValue, minimumValue, fieldName);
     }
 }

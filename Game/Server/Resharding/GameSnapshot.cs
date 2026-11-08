@@ -7,7 +7,8 @@ public sealed record GameObjectSnapshot(string ItemId, string SerializedProperti
 public sealed record GameSnapshot(
     string GameId,
     GameServer.Games.GamePriority Priority,
-    IReadOnlyList<GameObjectSnapshot> Items);
+    IReadOnlyList<GameObjectSnapshot> Items,
+    IReadOnlyList<string>? QueuedCommands = null);
 
 public interface ISnapshotCodec
 {

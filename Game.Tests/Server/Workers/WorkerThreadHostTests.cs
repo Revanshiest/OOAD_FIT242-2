@@ -4,6 +4,7 @@ using GameServer.Games.Pipeline;
 using GameServer.Messaging;
 using GameServer.Resharding;
 using GameServer.Workers;
+using Game.Tests.Server.Messaging;
 using Game.Tests.Server.Resharding;
 
 public class WorkerThreadHostTests
@@ -50,5 +51,40 @@ public class WorkerThreadHostTests
 
         Assert.Equal(7, workerHost.ThreadId);
         Assert.True(gameProcessedMessage);
+    }
+
+    [Fact]
+    public void WorkerThreadHost_WorksWithIGameWorker_Abstraction()
+    {
+        var mockWorker = new MockGameWorker();
+        var writer = new RecordingMessageWriter();
+        var host = new WorkerThreadHost(0, mockWorker, writer, TimeProvider.System);
+
+        Assert.IsAssignableFrom<IWorkerThreadHost>(host);
+        host.Start();
+        Thread.Sleep(20);
+        host.Stop();
+        host.Join();
+
+        Assert.True(mockWorker.ExecuteCycleCalled);
+    }
+
+    private sealed class MockGameWorker : IGameWorker
+    {
+        public bool IsShutdownCompleted => false;
+        public bool HasReadyWork => false;
+        public bool ExecuteCycleCalled { get; private set; }
+
+        public WorkerCycleResult ExecuteCycle(DateTimeOffset currentTime)
+        {
+            ExecuteCycleCalled = true;
+            return new WorkerCycleResult(0, 0, 0, 0, []);
+        }
+
+        public bool WaitForIncomingMessage(TimeSpan waitTimeout, CancellationToken cancellationToken)
+        {
+            cancellationToken.WaitHandle.WaitOne(waitTimeout);
+            return false;
+        }
     }
 }
