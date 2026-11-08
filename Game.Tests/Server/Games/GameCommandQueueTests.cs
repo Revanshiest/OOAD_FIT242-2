@@ -78,6 +78,31 @@ public class GameCommandQueueTests
     }
 
     [Fact]
+    public void DequeueBatch_DequeuesDirectly_WithoutIntermediateListAllocation()
+    {
+        var queue = new GameCommandQueue();
+        var cmd1 = new RecordingCommand();
+        var cmd2 = new RecordingCommand();
+        var cmd3 = new RecordingCommand();
+
+        queue.Enqueue(cmd1);
+        queue.Enqueue(cmd2);
+        queue.Enqueue(cmd3);
+
+        var batch = queue.DequeueBatch(2);
+
+        Assert.Equal(2, batch.Count);
+        Assert.Same(cmd1, batch[0]);
+        Assert.Same(cmd2, batch[1]);
+        Assert.Equal(1, queue.Count);
+
+        var remaining = queue.DequeueBatch(5);
+        Assert.Single(remaining);
+        Assert.Same(cmd3, remaining[0]);
+        Assert.Equal(0, queue.Count);
+    }
+
+    [Fact]
     public void Enqueue_ThrowsArgumentNullException_WhenCommandIsNull()
     {
         var queue = new GameCommandQueue();

@@ -1,6 +1,6 @@
 namespace Game.Commands;
 
-public sealed class MacroCommand : ICommand
+public class MacroCommand : ICommand
 {
     private readonly IReadOnlyList<ICommand> _commands;
 

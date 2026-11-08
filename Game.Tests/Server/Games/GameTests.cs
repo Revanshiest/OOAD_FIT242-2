@@ -96,6 +96,39 @@ public class GameTests
         Assert.Throws<ArgumentException>(() => new Game("  ", GamePriority.Normal, new Scope()));
     }
 
+    [Fact]
+    public void Game_ImplementsIActor_SupportsTellSendMessageAndChildActors()
+    {
+        var game1 = new Game("game-root", GamePriority.High, new Scope());
+        Assert.Equal("game-root", game1.ActorId);
+
+        var executed = false;
+        var testCmd = new ActionCommand(() => executed = true);
+        game1.Tell(testCmd);
+        Assert.Equal(1, game1.CommandQueue.Count);
+
+        game1.ExecuteNextCommand();
+        Assert.True(executed);
+
+        var childActor = game1.CreateChildActor("game-child-1", GamePriority.Normal);
+        Assert.NotNull(childActor);
+        Assert.Equal("game-child-1", childActor.ActorId);
+        Assert.Single(game1.ChildActors);
+
+        var childExecuted = false;
+        var childCmd = new ActionCommand(() => childExecuted = true);
+        game1.SendMessage(childActor, childCmd);
+
+        Assert.Equal(1, ((Game)childActor).CommandQueue.Count);
+        ((Game)childActor).ExecuteNextCommand();
+        Assert.True(childExecuted);
+    }
+
+    private sealed class ActionCommand(Action action) : ICommand
+    {
+        public void Execute() => action();
+    }
+
     private static Game CreateGame()
     {
         return new Game("game-1", GamePriority.Normal, new Scope());

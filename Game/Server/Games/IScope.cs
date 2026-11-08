@@ -11,4 +11,6 @@ public interface IScope
     bool Contains(string itemId);
 
     IReadOnlyCollection<string> ItemIds { get; }
+
+    object? IocScope { get; }
 }

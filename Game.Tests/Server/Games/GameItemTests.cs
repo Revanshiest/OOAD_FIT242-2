@@ -62,4 +62,34 @@ public class GameItemTests
 
         Assert.Throws<ArgumentNullException>(() => item.SetProperty("Position", null!));
     }
+
+    [Fact]
+    public void ReadOnlyGameItem_ProvidesImmutableContract_AndLiskovSubstitution()
+    {
+        var properties = new Dictionary<string, object>
+        {
+            ["Position"] = new Vector([100, 200]),
+            ["Type"] = "Asteroid"
+        };
+
+        IReadOnlyGameItem readOnlyItem = new ReadOnlyGameItem(properties);
+
+        Assert.Equal(2, readOnlyItem.PropertyNames.Count);
+        Assert.Equal(new Vector([100, 200]), readOnlyItem.GetProperty("Position"));
+        Assert.Equal("Asteroid", readOnlyItem.GetProperty("Type"));
+
+        var mutableItem = new GameItem();
+        mutableItem.SetProperty("Velocity", new Vector([1, 0]));
+
+        Assert.IsAssignableFrom<IReadOnlyGameItem>(mutableItem);
+        Assert.IsAssignableFrom<IMutableGameItem>(mutableItem);
+        Assert.IsAssignableFrom<IGameItem>(mutableItem);
+
+        IGameItem readOnlyAsGameItem = new ReadOnlyGameItem(properties);
+        var scope = new Scope();
+        scope.Register("obs1", readOnlyAsGameItem);
+        Assert.True(scope.Contains("obs1"));
+        Assert.Equal(new Vector([100, 200]), scope.GetItem("obs1").GetProperty("Position"));
+        Assert.Throws<NotSupportedException>(() => scope.GetItem("obs1").SetProperty("Position", new Vector([0, 0])));
+    }
 }

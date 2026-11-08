@@ -3,58 +3,68 @@ namespace GameServer.Games;
 public sealed class Scope : IScope
 {
     private readonly Dictionary<string, IGameItem> _itemsById = new();
+    private readonly object? _iocScope;
+
+    public Scope(object? iocScope = null)
+    {
+        _iocScope = iocScope ?? TryResolveIocScope();
+    }
+
+    private static object? TryResolveIocScope()
+    {
+        try
+        {
+            return Ioc.Resolve<object>("IoC.Scope.Create");
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    public object? IocScope => _iocScope;
 
     public IReadOnlyCollection<string> ItemIds => _itemsById.Keys;
 
     public IGameItem GetItem(string itemId)
     {
-        if (string.IsNullOrWhiteSpace(itemId))
-        {
-            throw new ArgumentException("Item identifier is required.", nameof(itemId));
-        }
+        _ = !string.IsNullOrWhiteSpace(itemId)
+            ? 0
+            : throw new ArgumentException("Item ID cannot be null or whitespace.", nameof(itemId));
 
-        if (!_itemsById.TryGetValue(itemId, out var item))
-        {
-            throw new KeyNotFoundException($"Item with id '{itemId}' is not present in the scope.");
-        }
-
-        return item;
+        return _itemsById.TryGetValue(itemId, out var item)
+            ? item
+            : throw new KeyNotFoundException($"Item with id '{itemId}' is not present in the scope.");
     }
 
     public void Register(string itemId, IGameItem item)
     {
-        if (string.IsNullOrWhiteSpace(itemId))
-        {
-            throw new ArgumentException("Item identifier is required.", nameof(itemId));
-        }
-
+        _ = !string.IsNullOrWhiteSpace(itemId)
+            ? 0
+            : throw new ArgumentException("Item ID cannot be null or whitespace.", nameof(itemId));
         ArgumentNullException.ThrowIfNull(item);
 
-        if (!_itemsById.TryAdd(itemId, item))
-        {
-            throw new InvalidOperationException($"Item with id '{itemId}' already exists in the scope.");
-        }
+        _ = _itemsById.TryAdd(itemId, item)
+            ? 0
+            : throw new InvalidOperationException($"Item with id '{itemId}' already exists in the scope.");
     }
 
     public void Unregister(string itemId)
     {
-        if (string.IsNullOrWhiteSpace(itemId))
-        {
-            throw new ArgumentException("Item identifier is required.", nameof(itemId));
-        }
+        _ = !string.IsNullOrWhiteSpace(itemId)
+            ? 0
+            : throw new ArgumentException("Item ID cannot be null or whitespace.", nameof(itemId));
 
-        if (!_itemsById.Remove(itemId))
-        {
-            throw new KeyNotFoundException($"Item with id '{itemId}' is not present in the scope.");
-        }
+        _ = _itemsById.Remove(itemId)
+            ? 0
+            : throw new KeyNotFoundException($"Item with id '{itemId}' is not present in the scope.");
     }
 
     public bool Contains(string itemId)
     {
-        if (string.IsNullOrWhiteSpace(itemId))
-        {
-            throw new ArgumentException("Item identifier is required.", nameof(itemId));
-        }
+        _ = !string.IsNullOrWhiteSpace(itemId)
+            ? 0
+            : throw new ArgumentException("Item ID cannot be null or whitespace.", nameof(itemId));
 
         return _itemsById.ContainsKey(itemId);
     }

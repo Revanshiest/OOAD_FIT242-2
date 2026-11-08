@@ -8,26 +8,20 @@ public sealed class GameItem : IGameItem
 
     public object GetProperty(string propertyName)
     {
-        if (string.IsNullOrWhiteSpace(propertyName))
-        {
-            throw new ArgumentException("Property name is required.", nameof(propertyName));
-        }
+        _ = !string.IsNullOrWhiteSpace(propertyName)
+            ? 0
+            : throw new ArgumentException("Property name cannot be null or whitespace.", nameof(propertyName));
 
-        if (!_properties.TryGetValue(propertyName, out var propertyValue))
-        {
-            throw new KeyNotFoundException($"Property '{propertyName}' is not present on the game item.");
-        }
-
-        return propertyValue;
+        return _properties.TryGetValue(propertyName, out var propertyValue)
+            ? propertyValue
+            : throw new KeyNotFoundException($"Property '{propertyName}' is not present on the game item.");
     }
 
     public void SetProperty(string propertyName, object propertyValue)
     {
-        if (string.IsNullOrWhiteSpace(propertyName))
-        {
-            throw new ArgumentException("Property name is required.", nameof(propertyName));
-        }
-
+        _ = !string.IsNullOrWhiteSpace(propertyName)
+            ? 0
+            : throw new ArgumentException("Property name cannot be null or whitespace.", nameof(propertyName));
         ArgumentNullException.ThrowIfNull(propertyValue);
 
         _properties[propertyName] = propertyValue;
