@@ -1,9 +1,8 @@
-using System.Text.Json;
-
 namespace GameServer.Endpoint;
 
+using System.Collections.Frozen;
+using System.Text.Json;
 using GameServer.Messaging;
-using GameServer.Resharding;
 using GameServer.Routing;
 
 public enum EndpointRejectionReason
@@ -12,7 +11,8 @@ public enum EndpointRejectionReason
     AuthenticationFailed = 1,
     WorkerQueueFull = 2,
     RateLimited = 3,
-    PayloadTooLarge = 4
+    PayloadTooLarge = 4,
+    ServerStopping = 5
 }
 
 public sealed record EndpointResponse(bool Accepted, int RoutingKey, EndpointRejectionReason? RejectionReason);
@@ -25,34 +25,107 @@ public sealed class PayloadTooLargeException : ArgumentException
     }
 }
 
-public sealed class Endpoint
+public sealed class Endpoint : IEndpoint
 {
+    private static readonly EndpointResponse StoppingResponse = new(false, 0, EndpointRejectionReason.ServerStopping);
+    private static readonly EndpointResponse PayloadTooLargeResponse = new(false, 0, EndpointRejectionReason.PayloadTooLarge);
+    private static readonly EndpointResponse MalformedMessageResponse = new(false, 0, EndpointRejectionReason.MalformedMessage);
+    private static readonly EndpointResponse AuthFailedResponse = new(false, 0, EndpointRejectionReason.AuthenticationFailed);
+    private static readonly EndpointResponse RateLimitedResponse = new(false, 0, EndpointRejectionReason.RateLimited);
+    private static readonly EndpointResponse QueueFullResponse = new(false, 0, EndpointRejectionReason.WorkerQueueFull);
+
+    private static readonly FrozenDictionary<EndpointRejectionReason, EndpointResponse> RejectionResponses =
+        new Dictionary<EndpointRejectionReason, EndpointResponse>
+        {
+            [EndpointRejectionReason.ServerStopping] = StoppingResponse,
+            [EndpointRejectionReason.PayloadTooLarge] = PayloadTooLargeResponse,
+            [EndpointRejectionReason.MalformedMessage] = MalformedMessageResponse,
+            [EndpointRejectionReason.AuthenticationFailed] = AuthFailedResponse,
+            [EndpointRejectionReason.RateLimited] = RateLimitedResponse,
+            [EndpointRejectionReason.WorkerQueueFull] = QueueFullResponse
+        }.ToFrozenDictionary();
+
+    private const int PrecomputedResponsePoolSize = 64;
+
+    private static readonly EndpointResponse[] PrecomputedAcceptedResponses =
+        Enumerable.Range(0, PrecomputedResponsePoolSize).Select(threadId => new EndpointResponse(true, threadId, null)).ToArray();
+
+    private static readonly Dictionary<bool, Func<int, EndpointResponse>> WorkerDispatchOutcomes = new()
+    {
+        [true] = GetAcceptedResponse,
+        [false] = _ => QueueFullResponse
+    };
+
+    private static readonly Dictionary<(bool Auth, bool Rate), Func<Endpoint, InboundMessage, EndpointResponse>> InboundValidations = new()
+    {
+        [(false, false)] = (_, _) => Rejected(EndpointRejectionReason.AuthenticationFailed),
+        [(false, true)] = (_, _) => Rejected(EndpointRejectionReason.AuthenticationFailed),
+        [(true, false)] = (_, _) => Rejected(EndpointRejectionReason.RateLimited),
+        [(true, true)] = (endpoint, message) => endpoint.DispatchToWorker(message)
+    };
+
     private readonly IAuthenticator _authenticator;
-    private readonly InboundMessageParser _messageParser;
-    private readonly PrimaryRouter _router;
+    private readonly IMessageParser<InboundMessage> _messageParser;
+    private readonly IRouter _router;
     private readonly IGameRateLimiter _gameRateLimiter;
     private readonly TimeProvider _timeProvider;
+    private readonly Dictionary<bool, Func<string, EndpointResponse>> _acceptanceRoutes;
+    private volatile bool _isSealed;
 
-    public Endpoint(IAuthenticator authenticator, InboundMessageParser messageParser, PrimaryRouter router)
+    public static EndpointResponse GetAcceptedResponse(int threadId)
+    {
+        return PrecomputedAcceptedResponses.ElementAtOrDefault(threadId)
+            ?? new EndpointResponse(true, threadId, null);
+    }
+
+    public Endpoint(IAuthenticator authenticator, IMessageParser<InboundMessage> messageParser, IRouter router)
         : this(authenticator, messageParser, router, PermissiveRateLimiter.Instance, TimeProvider.System)
     {
     }
 
     public Endpoint(
         IAuthenticator authenticator,
-        InboundMessageParser messageParser,
-        PrimaryRouter router,
+        IMessageParser<InboundMessage> messageParser,
+        IRouter router,
         IGameRateLimiter gameRateLimiter,
         TimeProvider timeProvider)
     {
-        _authenticator = authenticator ?? throw new ArgumentNullException(nameof(authenticator));
-        _messageParser = messageParser ?? throw new ArgumentNullException(nameof(messageParser));
-        _router = router ?? throw new ArgumentNullException(nameof(router));
-        _gameRateLimiter = gameRateLimiter ?? throw new ArgumentNullException(nameof(gameRateLimiter));
-        _timeProvider = timeProvider ?? throw new ArgumentNullException(nameof(timeProvider));
+        ArgumentNullException.ThrowIfNull(authenticator);
+        ArgumentNullException.ThrowIfNull(messageParser);
+        ArgumentNullException.ThrowIfNull(router);
+        ArgumentNullException.ThrowIfNull(gameRateLimiter);
+        ArgumentNullException.ThrowIfNull(timeProvider);
+
+        _authenticator = authenticator;
+        _messageParser = messageParser;
+        _router = router;
+        _gameRateLimiter = gameRateLimiter;
+        _timeProvider = timeProvider;
+        _acceptanceRoutes = new()
+        {
+            [true] = _ => StoppingResponse,
+            [false] = AcceptActive
+        };
+    }
+
+    public bool IsAcceptanceSealed => _isSealed;
+
+    public void SealAcceptance()
+    {
+        _isSealed = true;
+    }
+
+    public void ResumeAcceptance()
+    {
+        _isSealed = false;
     }
 
     public EndpointResponse Accept(string requestPayload)
+    {
+        return _acceptanceRoutes[_isSealed](requestPayload);
+    }
+
+    internal EndpointResponse AcceptActive(string requestPayload)
     {
         InboundMessage inboundMessage;
 
@@ -73,25 +146,21 @@ public sealed class Endpoint
             return Rejected(EndpointRejectionReason.MalformedMessage);
         }
 
-        if (!_authenticator.IsAuthenticated(inboundMessage))
-        {
-            return Rejected(EndpointRejectionReason.AuthenticationFailed);
-        }
+        var isAuth = _authenticator.IsAuthenticated(inboundMessage);
+        var isRateAdmitted = _gameRateLimiter.TryAdmit(inboundMessage.GameId, _timeProvider.GetUtcNow());
 
-        if (!_gameRateLimiter.TryAdmit(inboundMessage.GameId, _timeProvider.GetUtcNow()))
-        {
-            return Rejected(EndpointRejectionReason.RateLimited);
-        }
+        return InboundValidations[(isAuth, isRateAdmitted)](this, inboundMessage);
+    }
 
+    private EndpointResponse DispatchToWorker(InboundMessage inboundMessage)
+    {
         var routeTarget = _router.ResolveTarget(inboundMessage.RoutingKey, inboundMessage.GameId);
-
-        return routeTarget.Writer.TryWrite(inboundMessage)
-            ? new EndpointResponse(true, routeTarget.ThreadId, null)
-            : Rejected(EndpointRejectionReason.WorkerQueueFull);
+        var isWritten = routeTarget.Writer.TryWrite(inboundMessage);
+        return WorkerDispatchOutcomes[isWritten](routeTarget.ThreadId);
     }
 
     private static EndpointResponse Rejected(EndpointRejectionReason rejectionReason)
     {
-        return new EndpointResponse(false, 0, rejectionReason);
+        return RejectionResponses.GetValueOrDefault(rejectionReason, new EndpointResponse(false, 0, rejectionReason));
     }
 }

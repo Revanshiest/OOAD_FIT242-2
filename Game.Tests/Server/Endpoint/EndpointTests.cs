@@ -102,6 +102,62 @@ public class EndpointTests
         Assert.Single(_recordingWriters[0].WrittenMessages);
     }
 
+    [Fact]
+    public void Accept_RejectsNewIncomingRequestsImmediately_WhenAcceptanceSealed()
+    {
+        var endpoint = CreateEndpoint();
+        const string validPayload = """{"key": 0, "id": "game-1", "token": "secret", "command": "Move"}""";
+
+        var responseBeforeSeal = endpoint.Accept(validPayload);
+        Assert.True(responseBeforeSeal.Accepted);
+
+        endpoint.SealAcceptance();
+        Assert.True(endpoint.IsAcceptanceSealed);
+
+        var responseAfterSeal = endpoint.Accept(validPayload);
+        Assert.False(responseAfterSeal.Accepted);
+        Assert.Equal(EndpointRejectionReason.ServerStopping, responseAfterSeal.RejectionReason);
+
+        endpoint.ResumeAcceptance();
+        Assert.False(endpoint.IsAcceptanceSealed);
+
+        var responseAfterResume = endpoint.Accept(validPayload);
+        Assert.True(responseAfterResume.Accepted);
+    }
+
+    [Fact]
+    public void Accept_UsesCachedResponses_OnAccept()
+    {
+        var endpoint = CreateEndpoint();
+        const string validPayload = """{"key": 0, "id": "game-1", "token": "secret", "command": "Move"}""";
+
+        var res1 = endpoint.Accept(validPayload);
+        var res2 = endpoint.Accept(validPayload);
+
+        Assert.True(res1.Accepted);
+        Assert.Same(res1, res2);
+
+        var malformedRes1 = endpoint.Accept("invalid-json");
+        var malformedRes2 = endpoint.Accept("invalid-json");
+        Assert.False(malformedRes1.Accepted);
+        Assert.Same(malformedRes1, malformedRes2);
+    }
+
+    [Fact]
+    public void Accept_WorksWithAbstractions_AndDependencyInversion()
+    {
+        var mockRouter = new MockRouter();
+        var mockParser = new MockParser();
+        var authenticator = new WhitelistTokenAuthenticator([ValidAuthToken]);
+
+        var endpoint = new Endpoint(authenticator, mockParser, mockRouter);
+
+        var response = endpoint.Accept("test-payload");
+        Assert.True(response.Accepted);
+        Assert.True(mockParser.ParseCalled);
+        Assert.True(mockRouter.ResolveTargetCalled);
+    }
+
     private Endpoint CreateEndpoint()
     {
         return CreateEndpoint(_recordingWriters.ToList());
@@ -113,5 +169,28 @@ public class EndpointTests
             new WhitelistTokenAuthenticator([ValidAuthToken]),
             new InboundMessageParser(),
             new PrimaryRouter(targetWriters, new ReshardingTable(Math.Max(targetWriters.Count, 1))));
+    }
+
+    private sealed class MockRouter : IRouter
+    {
+        public bool ResolveTargetCalled { get; private set; }
+        private readonly RecordingMessageWriter _writer = new();
+
+        public RouteTarget ResolveTarget(int routingKey, string gameId)
+        {
+            ResolveTargetCalled = true;
+            return new RouteTarget(0, _writer);
+        }
+    }
+
+    private sealed class MockParser : IMessageParser<InboundMessage>
+    {
+        public bool ParseCalled { get; private set; }
+
+        public InboundMessage Parse(string requestPayload)
+        {
+            ParseCalled = true;
+            return new InboundMessage(0, "game-mock", ValidAuthToken, "Move", "{}");
+        }
     }
 }

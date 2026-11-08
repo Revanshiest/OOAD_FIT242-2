@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Net;
 using System.Text;
 using GameServer.Endpoint;
@@ -73,6 +74,53 @@ public class HttpListenerEndpointAdapterIntegrationTests
 
         Assert.Equal(HttpStatusCode.OK, httpResponse.StatusCode);
         Assert.Contains("running", responsePayload);
+    }
+
+    [Fact]
+    public async Task GetRequest_WithCommandQueryParams_RoutesMessageSuccessfully()
+    {
+        var allocatedPort = TestPortAllocator.GetFreePort();
+        var targetQueue = new BoundedMessageQueue<InboundMessage>(16);
+        var endpointAdapter = CreateEndpointAdapter([targetQueue], allocatedPort);
+
+        using var httpClient = new HttpClient { BaseAddress = new Uri($"http://127.0.0.1:{allocatedPort}/") };
+
+        var httpResponse = await httpClient.GetAsync("?key=0&id=game-get&token=secret&command=Move");
+        var responsePayload = await httpResponse.Content.ReadAsStringAsync();
+
+        endpointAdapter.Stop();
+
+        Assert.Equal(HttpStatusCode.OK, httpResponse.StatusCode);
+        Assert.Contains("\"accepted\":true", responsePayload);
+        Assert.Equal(1, targetQueue.PendingCount);
+        var message = targetQueue.ReadBlocking(CancellationToken.None);
+        Assert.Equal("game-get", message.GameId);
+        Assert.Equal("Move", message.CommandName);
+    }
+
+    [Fact]
+    public void Stop_IsIdempotentAndThreadSafe()
+    {
+        var allocatedPort = TestPortAllocator.GetFreePort();
+        var targetQueue = new BoundedMessageQueue<InboundMessage>(16);
+        var endpointAdapter = CreateEndpointAdapter([targetQueue], allocatedPort);
+
+        var exceptions = new ConcurrentBag<Exception>();
+
+        Parallel.For(0, 10, _ =>
+        {
+            try
+            {
+                endpointAdapter.Stop();
+            }
+            catch (Exception ex)
+            {
+                exceptions.Add(ex);
+            }
+        });
+
+        Assert.Empty(exceptions);
+        Assert.True(endpointAdapter.IsStopped);
     }
 
     private static HttpListenerEndpointAdapter CreateEndpointAdapter(IReadOnlyList<IMessageQueueWriter<InboundMessage>> targetWriters, int port)

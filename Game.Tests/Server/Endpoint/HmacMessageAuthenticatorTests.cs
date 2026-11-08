@@ -110,6 +110,35 @@ public class HmacMessageAuthenticatorTests
     }
 
     [Fact]
+    public void HmacMessageAuthenticator_SignsAndAuthenticatesMessagesCorrectly()
+    {
+        var authenticator = new HmacMessageAuthenticator("super-secret-key-12345", _timeProvider);
+
+        var message = new InboundMessage(0, "game-1", string.Empty, "Move", "{}");
+        var signedToken = authenticator.Sign(message);
+
+        Assert.False(string.IsNullOrWhiteSpace(signedToken));
+
+        var signedMessage = message with { AuthToken = signedToken };
+        Assert.True(authenticator.IsAuthenticated(signedMessage));
+
+        var tamperedMessage = signedMessage with { AuthToken = signedToken + "tampered" };
+        Assert.False(authenticator.IsAuthenticated(tamperedMessage));
+    }
+
+    [Fact]
+    public void IsAuthenticated_BlocksReplayAttacks_WithExactSameToken()
+    {
+        var authenticator = new HmacMessageAuthenticator(SigningSecret, _timeProvider);
+        var message = CreateMessage();
+        var token = authenticator.Sign(message);
+        var signedMessage = message with { AuthToken = token };
+
+        Assert.True(authenticator.IsAuthenticated(signedMessage));
+        Assert.False(authenticator.IsAuthenticated(signedMessage));
+    }
+
+    [Fact]
     public void Constructor_ThrowsArgumentException_WhenSecretIsMissing()
     {
         Assert.Throws<ArgumentException>(() => new HmacMessageAuthenticator("  ", _timeProvider));

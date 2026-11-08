@@ -37,6 +37,16 @@ public class InboundMessageParserTests
     }
 
     [Fact]
+    public void Parse_ParsesMessageId_WhenPresent()
+    {
+        const string payload = """{"key":0,"id":"game-1","token":"secret","command":"Move","messageId":"msg-12345"}""";
+
+        var message = _messageParser.Parse(payload);
+
+        Assert.Equal("msg-12345", message.MessageId);
+    }
+
+    [Fact]
     public void Parse_PreservesNestedArgumentStructure()
     {
         const string requestPayload = """
@@ -52,11 +62,18 @@ public class InboundMessageParserTests
     [Theory]
     [InlineData("""{"id": "game-1", "token": "secret", "command": "Move"}""", "key")]
     [InlineData("""{"key": 0, "token": "secret", "command": "Move"}""", "id")]
-    [InlineData("""{"key": 0, "id": "game-1", "command": "Move"}""", "token")]
     [InlineData("""{"key": 0, "id": "game-1", "token": "secret"}""", "command")]
     public void Parse_ThrowsArgumentException_WhenRequiredFieldIsMissing(string requestPayload, string _)
     {
         Assert.Throws<ArgumentException>(() => _messageParser.Parse(requestPayload));
+    }
+
+    [Fact]
+    public void Parse_AllowsMissingToken_AndDefaultsToEmptyString()
+    {
+        const string requestPayload = """{"key": 0, "id": "game-1", "command": "Move"}""";
+        var message = _messageParser.Parse(requestPayload);
+        Assert.Equal(string.Empty, message.AuthToken);
     }
 
     [Fact]

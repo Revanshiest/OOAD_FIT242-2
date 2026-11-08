@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
@@ -9,44 +10,68 @@ using GameServer.Messaging;
 public sealed class HmacMessageAuthenticator : IAuthenticator
 {
     public const int SignatureTimestampWindowSeconds = 300;
+    private const int SignatureCleanupThreshold = 1000;
     private const char TokenSeparator = '.';
     private const char CanonicalFieldSeparator = '|';
     private readonly string _signingSecret;
     private readonly TimeProvider _timeProvider;
+    private readonly ConcurrentDictionary<string, long> _seenSignatures = new();
 
     public HmacMessageAuthenticator(string signingSecret, TimeProvider timeProvider)
     {
-        if (string.IsNullOrWhiteSpace(signingSecret))
-        {
-            throw new ArgumentException("Signing secret is required.", nameof(signingSecret));
-        }
+        ArgumentException.ThrowIfNullOrWhiteSpace(signingSecret);
+        ArgumentNullException.ThrowIfNull(timeProvider);
 
         _signingSecret = signingSecret;
-        _timeProvider = timeProvider ?? throw new ArgumentNullException(nameof(timeProvider));
+        _timeProvider = timeProvider;
     }
 
     public bool IsAuthenticated(InboundMessage message)
     {
         ArgumentNullException.ThrowIfNull(message);
 
-        if (string.IsNullOrWhiteSpace(message.AuthToken))
-        {
-            return false;
-        }
+        return !string.IsNullOrWhiteSpace(message.AuthToken) && ValidateTokenStructure(message);
+    }
 
-        var separatorIndex = message.AuthToken.LastIndexOf(TokenSeparator);
+    private bool ValidateTokenStructure(InboundMessage message)
+    {
+        var token = message.AuthToken;
+        var separatorIndex = token.LastIndexOf(TokenSeparator);
+        var isValidSeparator = separatorIndex >= 1 && separatorIndex < token.Length - 1;
 
-        if (separatorIndex < 1 || separatorIndex == message.AuthToken.Length - 1)
-        {
-            return false;
-        }
+        return isValidSeparator && ValidateTokenSignature(token[..separatorIndex], token[(separatorIndex + 1)..], message);
+    }
 
-        var timestampPart = message.AuthToken[..separatorIndex];
-        var signaturePart = message.AuthToken[(separatorIndex + 1)..];
-
-        return long.TryParse(timestampPart, CultureInfo.InvariantCulture, out var messageTimestampUnixSeconds)
+    private bool ValidateTokenSignature(string timestampPart, string signaturePart, InboundMessage message)
+    {
+        var canParse = long.TryParse(timestampPart, CultureInfo.InvariantCulture, out var messageTimestampUnixSeconds);
+        var isSignatureValid = canParse
             && IsTimestampWithinWindow(messageTimestampUnixSeconds)
             && IsSignatureValid(timestampPart, signaturePart, message);
+
+        return isSignatureValid && RecordSignature(signaturePart, message, messageTimestampUnixSeconds);
+    }
+
+    private bool RecordSignature(string signaturePart, InboundMessage message, long messageTimestampUnixSeconds)
+    {
+        var currentUnixSeconds = _timeProvider.GetUtcNow().ToUnixTimeSeconds();
+        PruneExpiredTokens(currentUnixSeconds);
+
+        var tokenKey = $"{signaturePart}:{message.MessageId}";
+        return _seenSignatures.TryAdd(tokenKey, messageTimestampUnixSeconds);
+    }
+
+    private void PruneExpiredTokens(long currentUnixSeconds)
+    {
+        var expiredKeys = _seenSignatures
+            .Where(signatureEntry => _seenSignatures.Count > SignatureCleanupThreshold && Math.Abs(currentUnixSeconds - signatureEntry.Value) > SignatureTimestampWindowSeconds)
+            .Select(signatureEntry => signatureEntry.Key)
+            .ToList();
+
+        foreach (var signatureKey in expiredKeys)
+        {
+            _seenSignatures.TryRemove(signatureKey, out _);
+        }
     }
 
     public string Sign(InboundMessage message)
@@ -71,22 +96,27 @@ public sealed class HmacMessageAuthenticator : IAuthenticator
     {
         return signaturePart.Length > 0
             && CryptographicOperations.FixedTimeEquals(
-                Encoding.UTF8.GetBytes(ComputeSignature(timestampPart, message)),
-                Encoding.UTF8.GetBytes(signaturePart));
+                Encoding.UTF8.GetBytes(signaturePart),
+                Encoding.UTF8.GetBytes(ComputeSignature(timestampPart, message)));
     }
 
     private string ComputeSignature(string timestampPart, InboundMessage message)
     {
-        var canonicalString = string.Concat(
-            timestampPart, CanonicalFieldSeparator,
-            message.RoutingKey.ToString(CultureInfo.InvariantCulture), CanonicalFieldSeparator,
-            message.GameId, CanonicalFieldSeparator,
-            message.CommandName, CanonicalFieldSeparator,
-            message.CommandArguments);
+        var canonicalPayload = string.Concat(
+            message.RoutingKey.ToString(CultureInfo.InvariantCulture),
+            CanonicalFieldSeparator,
+            message.GameId,
+            CanonicalFieldSeparator,
+            message.CommandName,
+            CanonicalFieldSeparator,
+            message.CommandArguments,
+            CanonicalFieldSeparator,
+            timestampPart);
 
-        var signatureBytes = new HMACSHA256(Encoding.UTF8.GetBytes(_signingSecret))
-            .ComputeHash(Encoding.UTF8.GetBytes(canonicalString));
+        var secretBytes = Encoding.UTF8.GetBytes(_signingSecret);
+        var payloadBytes = Encoding.UTF8.GetBytes(canonicalPayload);
+        var computedHash = HMACSHA256.HashData(secretBytes, payloadBytes);
 
-        return Convert.ToHexString(signatureBytes);
+        return Convert.ToHexStringLower(computedHash);
     }
 }
