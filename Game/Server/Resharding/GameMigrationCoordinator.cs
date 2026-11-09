@@ -36,8 +36,6 @@ public sealed class GameMigrationCoordinator : IGameMigrationCoordinator
     public void BeginThreadMigration(GameMigrationRequest migrationRequest)
     {
         ArgumentNullException.ThrowIfNull(migrationRequest);
-        _reshardingTable.SetRoute(migrationRequest.GameId, migrationRequest.TargetThreadId);
-
         var migrateOutArguments = JsonSerializer.Serialize(new
         {
             gameId = migrationRequest.GameId,
@@ -54,6 +52,8 @@ public sealed class GameMigrationCoordinator : IGameMigrationCoordinator
         _ = _messagePoster.TryPost(migrationRequest.SourceThreadId, migrateOutMessage)
             ? 0
             : throw new InvalidOperationException($"Source worker '{migrationRequest.SourceThreadId}' rejected the migration request.");
+
+        _reshardingTable.SetRoute(migrationRequest.GameId, migrationRequest.TargetThreadId);
     }
 
     public void CompleteThreadMigration(string gameId, int targetThreadId)

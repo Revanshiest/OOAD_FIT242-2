@@ -8,6 +8,8 @@ public interface IReshardingTable
 
     void SetRoute(string gameId, int threadId);
 
+    int GetOrAddRoute(string gameId, int threadId);
+
     void RemoveRoute(string gameId);
 
     void RemoveRoutesForThread(int threadId);

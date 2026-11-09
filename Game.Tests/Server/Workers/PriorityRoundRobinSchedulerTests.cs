@@ -352,6 +352,44 @@ public class PriorityRoundRobinSchedulerTests
             scheduler.Unregister("missing", GameTerminationReason.FloodQueueOverflow));
     }
 
+    [Fact]
+    public void ScheduleCycle_StopsAtSuspensionAndPreservesRemainingCommands()
+    {
+        var scheduler = CreateScheduler();
+        var game = CreateGame("game-1");
+        game.CommandQueue.Enqueue(new SuspendGameCommand(game, new FixedTimeProvider(TestTimestamp)));
+        game.CommandQueue.Enqueue(new LogCommand("after", _executionLog));
+        scheduler.Register(game);
+
+        scheduler.ScheduleCycle(TestTimestamp);
+
+        Assert.True(game.IsAwaitingExternalEvent);
+        Assert.Empty(_executionLog);
+        Assert.Equal(1, game.CommandQueue.Count);
+
+        game.ResumeFromExternalEvent();
+        scheduler.NotifyCommandsQueued(game);
+        scheduler.ScheduleCycle(TestTimestamp);
+        Assert.Equal(new[] { "after" }, _executionLog);
+    }
+
+    [Fact]
+    public void ScheduleCycle_DoesNotExecuteRemovedGameWhenIdIsReused()
+    {
+        var scheduler = CreateScheduler();
+        var oldGame = CreateGame("game-1");
+        oldGame.CommandQueue.Enqueue(new LogCommand("old", _executionLog));
+        scheduler.Register(oldGame);
+        scheduler.Unregister("game-1", GameTerminationReason.FloodQueueOverflow);
+        var newGame = CreateGame("game-1");
+        newGame.CommandQueue.Enqueue(new LogCommand("new", _executionLog));
+        scheduler.Register(newGame);
+
+        scheduler.ScheduleCycle(TestTimestamp);
+
+        Assert.Equal(new[] { "new" }, _executionLog);
+    }
+
     private PriorityRoundRobinScheduler CreateScheduler()
     {
         return CreateSchedulerWithAwaitThreshold(GameWorkerSettings.CreateDefault().MaxExternalAwaitDuration);

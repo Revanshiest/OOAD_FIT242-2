@@ -12,7 +12,9 @@ public enum EndpointRejectionReason
     WorkerQueueFull = 2,
     RateLimited = 3,
     PayloadTooLarge = 4,
-    ServerStopping = 5
+    ServerStopping = 5,
+    ForbiddenCommand = 6,
+    ServerUnavailable = 7
 }
 
 public sealed record EndpointResponse(bool Accepted, int RoutingKey, EndpointRejectionReason? RejectionReason);
@@ -33,6 +35,8 @@ public sealed class Endpoint : IEndpoint
     private static readonly EndpointResponse AuthFailedResponse = new(false, 0, EndpointRejectionReason.AuthenticationFailed);
     private static readonly EndpointResponse RateLimitedResponse = new(false, 0, EndpointRejectionReason.RateLimited);
     private static readonly EndpointResponse QueueFullResponse = new(false, 0, EndpointRejectionReason.WorkerQueueFull);
+    private static readonly EndpointResponse ForbiddenCommandResponse = new(false, 0, EndpointRejectionReason.ForbiddenCommand);
+    private static readonly EndpointResponse ServerUnavailableResponse = new(false, 0, EndpointRejectionReason.ServerUnavailable);
 
     private static readonly FrozenDictionary<EndpointRejectionReason, EndpointResponse> RejectionResponses =
         new Dictionary<EndpointRejectionReason, EndpointResponse>
@@ -42,7 +46,9 @@ public sealed class Endpoint : IEndpoint
             [EndpointRejectionReason.MalformedMessage] = MalformedMessageResponse,
             [EndpointRejectionReason.AuthenticationFailed] = AuthFailedResponse,
             [EndpointRejectionReason.RateLimited] = RateLimitedResponse,
-            [EndpointRejectionReason.WorkerQueueFull] = QueueFullResponse
+            [EndpointRejectionReason.WorkerQueueFull] = QueueFullResponse,
+            [EndpointRejectionReason.ForbiddenCommand] = ForbiddenCommandResponse,
+            [EndpointRejectionReason.ServerUnavailable] = ServerUnavailableResponse
         }.ToFrozenDictionary();
 
     private const int PrecomputedResponsePoolSize = 64;
@@ -53,7 +59,7 @@ public sealed class Endpoint : IEndpoint
     private static readonly Dictionary<bool, Func<int, EndpointResponse>> WorkerDispatchOutcomes = new()
     {
         [true] = GetAcceptedResponse,
-        [false] = _ => QueueFullResponse
+        [false] = threadId => new EndpointResponse(false, threadId, EndpointRejectionReason.WorkerQueueFull)
     };
 
     private static readonly Dictionary<(bool Auth, bool Rate), Func<Endpoint, InboundMessage, EndpointResponse>> InboundValidations = new()
@@ -147,16 +153,27 @@ public sealed class Endpoint : IEndpoint
         }
 
         var isAuth = _authenticator.IsAuthenticated(inboundMessage);
-        var isRateAdmitted = _gameRateLimiter.TryAdmit(inboundMessage.GameId, _timeProvider.GetUtcNow());
+        var isInternalCommand = inboundMessage.CommandName.StartsWith("Server.", StringComparison.Ordinal);
+        var isRateAdmitted = isAuth && !isInternalCommand
+            && _gameRateLimiter.TryAdmit(inboundMessage.GameId, _timeProvider.GetUtcNow());
 
-        return InboundValidations[(isAuth, isRateAdmitted)](this, inboundMessage);
+        return isAuth && isInternalCommand
+            ? Rejected(EndpointRejectionReason.ForbiddenCommand)
+            : InboundValidations[(isAuth, isRateAdmitted)](this, inboundMessage);
     }
 
     private EndpointResponse DispatchToWorker(InboundMessage inboundMessage)
     {
-        var routeTarget = _router.ResolveTarget(inboundMessage.RoutingKey, inboundMessage.GameId);
-        var isWritten = routeTarget.Writer.TryWrite(inboundMessage);
-        return WorkerDispatchOutcomes[isWritten](routeTarget.ThreadId);
+        try
+        {
+            var routeTarget = _router.ResolveTarget(inboundMessage.RoutingKey, inboundMessage.GameId);
+            var isWritten = routeTarget.Writer.TryWrite(inboundMessage);
+            return WorkerDispatchOutcomes[isWritten](routeTarget.ThreadId);
+        }
+        catch (NoWorkersAvailableException)
+        {
+            return Rejected(EndpointRejectionReason.ServerUnavailable);
+        }
     }
 
     private static EndpointResponse Rejected(EndpointRejectionReason rejectionReason)

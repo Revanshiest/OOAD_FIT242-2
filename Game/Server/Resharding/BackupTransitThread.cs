@@ -7,7 +7,6 @@ using GameServer.Messaging;
 public sealed class BackupTransitThread : ITransitOverflowSink
 {
     public const int DefaultTransitQueueCapacity = 8192;
-    private const int MaximumDeliveryAttempts = 5;
     private const int DeliveryRetryDelayMilliseconds = 5;
     private readonly ConcurrentQueue<TransitEnvelope> _transitQueue = new();
     private readonly AutoResetEvent _hasWork = new(false);
@@ -98,16 +97,10 @@ public sealed class BackupTransitThread : ITransitOverflowSink
     {
         var delivered = transitEnvelope.TargetWriter.TryWrite(transitEnvelope.Message);
 
-        for (var retry = 0; retry < MaximumDeliveryAttempts && !delivered && !_stopSource.IsCancellationRequested; retry++)
-        {
-            _stopSource.Token.WaitHandle.WaitOne(DeliveryRetryDelayMilliseconds);
-            delivered = transitEnvelope.TargetWriter.TryWrite(transitEnvelope.Message);
-        }
-
         while (!delivered && !_stopSource.IsCancellationRequested)
         {
-            transitEnvelope.TargetWriter.WriteBlocking(transitEnvelope.Message);
-            break;
+            _stopSource.Token.WaitHandle.WaitOne(DeliveryRetryDelayMilliseconds);
+            delivered = !_stopSource.IsCancellationRequested && transitEnvelope.TargetWriter.TryWrite(transitEnvelope.Message);
         }
 
         return true;

@@ -23,7 +23,9 @@ public sealed class HttpListenerEndpointAdapter : IDisposable
             [EndpointRejectionReason.AuthenticationFailed] = HttpStatusCode.UnprocessableEntity,
             [EndpointRejectionReason.MalformedMessage] = HttpStatusCode.UnprocessableEntity,
             [EndpointRejectionReason.RateLimited] = HttpStatusCode.UnprocessableEntity,
-            [EndpointRejectionReason.PayloadTooLarge] = HttpStatusCode.UnprocessableEntity
+            [EndpointRejectionReason.PayloadTooLarge] = HttpStatusCode.UnprocessableEntity,
+            [EndpointRejectionReason.ForbiddenCommand] = HttpStatusCode.Forbidden,
+            [EndpointRejectionReason.ServerUnavailable] = HttpStatusCode.ServiceUnavailable
         }.ToFrozenDictionary();
 
     public HttpListenerEndpointAdapter(IEndpoint endpoint, int port)

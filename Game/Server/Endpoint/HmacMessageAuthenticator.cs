@@ -87,9 +87,8 @@ public sealed class HmacMessageAuthenticator : IAuthenticator
     private bool IsTimestampWithinWindow(long messageTimestampUnixSeconds)
     {
         var currentUnixSeconds = _timeProvider.GetUtcNow().ToUnixTimeSeconds();
-        var timestampAgeSeconds = currentUnixSeconds - messageTimestampUnixSeconds;
-
-        return Math.Abs(timestampAgeSeconds) <= SignatureTimestampWindowSeconds;
+        return messageTimestampUnixSeconds >= currentUnixSeconds - SignatureTimestampWindowSeconds
+            && messageTimestampUnixSeconds <= currentUnixSeconds + SignatureTimestampWindowSeconds;
     }
 
     private bool IsSignatureValid(string timestampPart, string signaturePart, InboundMessage message)
@@ -110,6 +109,8 @@ public sealed class HmacMessageAuthenticator : IAuthenticator
             message.CommandName,
             CanonicalFieldSeparator,
             message.CommandArguments,
+            CanonicalFieldSeparator,
+            message.MessageId ?? string.Empty,
             CanonicalFieldSeparator,
             timestampPart);
 

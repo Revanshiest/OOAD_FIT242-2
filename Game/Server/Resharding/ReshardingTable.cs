@@ -43,6 +43,14 @@ public sealed class ReshardingTable : IReshardingTable
         _threadIdByGameId.TryRemove(gameId, out _);
     }
 
+    public int GetOrAddRoute(string gameId, int threadId)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(gameId);
+        ArgumentOutOfRangeException.ThrowIfNegative(threadId);
+        ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual(threadId, ThreadCount);
+        return _threadIdByGameId.GetOrAdd(gameId, threadId);
+    }
+
     public void RemoveRoutesForThread(int threadId)
     {
         var routesToRemove = _threadIdByGameId

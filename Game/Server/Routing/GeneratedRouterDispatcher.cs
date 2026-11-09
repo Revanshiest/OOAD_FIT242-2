@@ -43,9 +43,29 @@ public sealed class GeneratedRouterDispatcher
         _state = CreateDispatchState(targetWriters);
     }
 
+    public void UpdateTargets(IReadOnlyList<RouteTarget> targets)
+    {
+        ArgumentNullException.ThrowIfNull(targets);
+        var targetArray = targets.ToArray();
+        if (targetArray.Length == 0)
+        {
+            _state = new DispatchState(targetArray, _ => throw new NoWorkersAvailableException(),
+                (_, _) => throw new NoWorkersAvailableException());
+            return;
+        }
+
+        _state = CreateDispatchState(targetArray);
+    }
+
     private static DispatchState CreateDispatchState(IReadOnlyList<INonBlockingMessageWriter<InboundMessage>> targetWriters)
     {
         var targets = targetWriters.Select((writer, index) => new RouteTarget(index, writer)).ToArray();
+
+        return CreateDispatchState(targets);
+    }
+
+    private static DispatchState CreateDispatchState(RouteTarget[] targets)
+    {
 
         var compiledDispatch = CompileDispatchDelegate(targets);
         var compiledRouteDispatch = CompileRouteDispatchDelegate(targets);
@@ -73,6 +93,8 @@ public sealed class GeneratedRouterDispatcher
         RouteTarget[] targetTable)
     {
         var targetTableExpression = Expression.Constant(targetTable, typeof(RouteTarget[]));
+        var targetsById = targetTable.ToDictionary(target => target.ThreadId);
+        var targetsByIdExpression = Expression.Constant(targetsById);
         var routingKeyExpression = Expression.Parameter(typeof(int), "routingKey");
         var overrideThreadIdExpression = Expression.Parameter(typeof(int), "overrideThreadId");
         var modulusConstantExpression = Expression.Constant(targetTable.Length, typeof(int));
@@ -82,18 +104,16 @@ public sealed class GeneratedRouterDispatcher
         var positiveIndexExpression = Expression.Modulo(offsetExpression, modulusConstantExpression);
 
         var hashTargetAccess = Expression.ArrayIndex(targetTableExpression, positiveIndexExpression);
-        var overrideTargetAccess = Expression.ArrayIndex(targetTableExpression, overrideThreadIdExpression);
+        var overrideTarget = Expression.Variable(typeof(RouteTarget), "overrideTarget");
+        var isOverrideValid = Expression.Call(targetsByIdExpression,
+            typeof(Dictionary<int, RouteTarget>).GetMethod(nameof(Dictionary<int, RouteTarget>.TryGetValue))!,
+            overrideThreadIdExpression, overrideTarget);
 
-        var isOverrideValid = Expression.AndAlso(
-            Expression.GreaterThanOrEqual(overrideThreadIdExpression, Expression.Constant(0)),
-            Expression.LessThan(overrideThreadIdExpression, modulusConstantExpression)
-        );
-
-        var resolvedTargetExpression = Expression.Condition(
+        var resolvedTargetExpression = Expression.Block([overrideTarget], Expression.Condition(
             isOverrideValid,
-            overrideTargetAccess,
+            overrideTarget,
             hashTargetAccess
-        );
+        ));
 
         var lambdaExpression = Expression.Lambda<Func<int, int, RouteTarget>>(
             resolvedTargetExpression,

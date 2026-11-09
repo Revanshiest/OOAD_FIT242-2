@@ -93,12 +93,13 @@ public sealed class Game : IGameRecipient, IActor
         int maxCommandCount,
         Action<ICommand, Exception>? onCommandFailed = null)
     {
-        var commands = _commandQueue.DequeueBatch(maxCommandCount);
+        ArgumentOutOfRangeException.ThrowIfLessThan(maxCommandCount, 1, nameof(maxCommandCount));
         int dispatched = 0;
         int failed = 0;
 
-        foreach (var command in commands)
+        while (dispatched + failed < maxCommandCount && _commandQueue.HasCommands && !_isAwaiting)
         {
+            var command = _commandQueue.DequeueBatch(1)[0];
             try
             {
                 command.Execute();

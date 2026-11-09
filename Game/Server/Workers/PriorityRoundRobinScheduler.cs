@@ -57,7 +57,7 @@ public sealed class PriorityRoundRobinScheduler : IGameScheduler
             ? 0
             : throw new InvalidOperationException($"Game '{game.GameId}' is already registered in the scheduler.");
 
-        _ = game.CommandQueue.HasCommands && EnqueueReady(game);
+        _ = game.CommandQueue.HasCommands && !game.IsAwaitingExternalEvent && EnqueueReady(game);
     }
 
     public Game? FindGame(string gameId)
@@ -69,7 +69,11 @@ public sealed class PriorityRoundRobinScheduler : IGameScheduler
     {
         ArgumentNullException.ThrowIfNull(game);
 
-        _ = !game.IsAwaitingExternalEvent && EnqueueReady(game);
+        _ = _gamesById.TryGetValue(game.GameId, out var currentGame)
+            && ReferenceEquals(game, currentGame)
+            && game.CommandQueue.HasCommands
+            && !game.IsAwaitingExternalEvent
+            && EnqueueReady(game);
     }
 
     public ScheduleOutcome ScheduleCycle(DateTimeOffset currentTime)
@@ -118,7 +122,10 @@ public sealed class PriorityRoundRobinScheduler : IGameScheduler
         readyRing.Clear();
         foreach (var game in ringSnapshot)
         {
-            _readyGameIds.Remove(game.GameId);
+            if (_gamesById.TryGetValue(game.GameId, out var currentGame) && ReferenceEquals(game, currentGame))
+            {
+                _readyGameIds.Remove(game.GameId);
+            }
         }
         return ringSnapshot;
     }
@@ -150,7 +157,9 @@ public sealed class PriorityRoundRobinScheduler : IGameScheduler
 
     private (int DispatchedCommandCount, int FailedCommandCount) ServeGame(Game game, DateTimeOffset currentTime, Queue<Game> readyRing)
     {
-        var isKnown = _gamesById.ContainsKey(game.GameId);
+        var isKnown = _gamesById.TryGetValue(game.GameId, out var currentGame)
+            && ReferenceEquals(game, currentGame)
+            && !game.IsAwaitingExternalEvent;
         var admitted = isKnown && _rateLimiter.TryAdmit(game.GameId, currentTime);
 
         _ = isKnown && !admitted && EnqueueReadyInto(readyRing, game);

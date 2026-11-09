@@ -7,6 +7,28 @@ namespace Game.Tests.Server.Resharding;
 public class BackupTransitThreadTests
 {
     [Fact]
+    public async Task Stop_TerminatesBackupThread_WhenTargetQueueIsFull()
+    {
+        var targetQueue = new BoundedMessageQueue<InboundMessage>(1);
+        var message = new InboundMessage(0, "game-1", "token", "Move", "{}");
+        Assert.True(targetQueue.TryWrite(message));
+        var backup = new BackupTransitThread();
+        backup.Overflow(message, targetQueue);
+        await Task.Delay(100);
+        backup.Stop();
+
+        var joinTask = Task.Run(backup.Join);
+        var completed = await Task.WhenAny(joinTask, Task.Delay(2000));
+        if (completed != joinTask)
+        {
+            targetQueue.DrainAllAvailable();
+            await joinTask;
+        }
+
+        Assert.Same(joinTask, completed);
+    }
+
+    [Fact]
     public void StartedBackupThread_PushesTransitEnvelopesIntoTargetWriters()
     {
         var firstTargetWriter = new RecordingMessageWriter();

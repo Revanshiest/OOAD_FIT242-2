@@ -73,8 +73,7 @@ public sealed class GameSnapshotService : IGameSnapshotService
         [ServerCommandNames.Move] = (root, _, scope) =>
             new MoveGameItemCommand(scope, root.GetProperty("itemId").GetString()!),
         [ServerCommandNames.CreateItem] = RestoreCreateItemCommand,
-        [ServerCommandNames.Suspend] = (_, game, _) =>
-            new SuspendGameCommand(game, TimeProvider.System)
+        [ServerCommandNames.Suspend] = (root, game, _) => RestoreSuspendCommand(root, game)
     };
 
     public static void RegisterValueWriter<T>(Action<Utf8JsonWriter, T> customWriter)
@@ -130,6 +129,17 @@ public sealed class GameSnapshotService : IGameSnapshotService
         return !string.IsNullOrWhiteSpace(descriptor) && descriptor.StartsWith("{")
             ? ParseJsonCommand(descriptor, targetGame, targetScope)
             : new EmptyCommand();
+    }
+
+    private static ICommand RestoreSuspendCommand(JsonElement root, Game game)
+    {
+        var command = new SuspendGameCommand(game, TimeProvider.System);
+        if (root.TryGetProperty("resumeRequested", out var resumeRequested) && resumeRequested.ValueKind == JsonValueKind.True)
+        {
+            command.TryRequestResume();
+        }
+
+        return command;
     }
 
     private static ICommand ParseJsonCommand(string descriptor, Game targetGame, IScope targetScope)

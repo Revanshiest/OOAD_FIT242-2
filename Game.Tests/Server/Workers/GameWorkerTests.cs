@@ -269,6 +269,52 @@ public class GameWorkerTests
         Assert.Equal(("game-1", GameTerminationReason.WatchdogAwaitTimeout), _terminationObserver.SingleTermination);
     }
 
+    [Fact]
+    public void ExecuteCycle_ProcessesResumeAfterPendingSuspend()
+    {
+        var (worker, inputQueue, scheduler) = CreateDefaultWorker();
+        inputQueue.TryWrite(new InboundMessage(0, "game-1", "token", ServerCommandNames.Suspend, "{}"));
+        inputQueue.TryWrite(new InboundMessage(0, "game-1", "token", ServerCommandNames.Resume, "{}"));
+        inputQueue.TryWrite(CreateItemMessage("game-1", "ship1", "Ship", [0, 0], [1, 0]));
+
+        worker.ExecuteCycle(TestTimestamp);
+
+        var game = scheduler.FindGame("game-1")!;
+        Assert.False(game.IsAwaitingExternalEvent);
+        Assert.True(game.Scope.Contains("ship1"));
+    }
+
+    [Fact]
+    public void Snapshot_PreservesResumeForPendingSuspend()
+    {
+        var settings = new GameWorkerSettings(1, 256, 100, TimeSpan.FromMinutes(5), 100, 100);
+        var (worker, inputQueue, scheduler) = CreateWorker(settings);
+        inputQueue.TryWrite(CreateItemMessage("game-1", "ship1", "Ship", [0, 0], [1, 0]));
+        inputQueue.TryWrite(new InboundMessage(0, "game-1", "token", ServerCommandNames.Suspend, "{}"));
+        inputQueue.TryWrite(new InboundMessage(0, "game-1", "token", ServerCommandNames.Resume, "{}"));
+        worker.ExecuteCycle(TestTimestamp);
+
+        var service = new GameSnapshotService();
+        var restored = service.RestoreGame(service.CaptureSnapshot(scheduler.FindGame("game-1")!));
+        restored.ExecuteBatch(1);
+
+        Assert.False(restored.IsAwaitingExternalEvent);
+    }
+
+    [Fact]
+    public void ExecuteCycle_RemovesExpiredGameFromRoutingBeforeRecreatingIt()
+    {
+        var (worker, inputQueue, scheduler) = CreateDefaultWorker();
+        inputQueue.TryWrite(new InboundMessage(0, "game-1", "token", ServerCommandNames.Suspend, "{}"));
+        worker.ExecuteCycle(TestTimestamp);
+        worker.ExecuteCycle(TestTimestamp.AddMinutes(6));
+
+        inputQueue.TryWrite(CreateItemMessage("game-1", "ship1", "Ship", [0, 0], [1, 0]));
+        worker.ExecuteCycle(TestTimestamp.AddMinutes(6));
+
+        Assert.True(scheduler.FindGame("game-1")!.Scope.Contains("ship1"));
+    }
+
     private Game? FindCreatedGame(string gameId)
     {
         return _terminationObserver.SchedulerRef.FindGame(gameId);
@@ -347,6 +393,14 @@ public class GameWorkerTests
 
         Assert.True(iocHandlerCalled);
         Assert.Equal(1, iocResult.RoutedMessageCount);
+    }
+
+    [Fact]
+    public void GameWorker_RejectsUnreservedControlHandlerNames()
+    {
+        var (worker, _, _) = CreateDefaultWorker();
+
+        Assert.Throws<ArgumentException>(() => worker.RegisterControlHandler("Move", _ => true));
     }
 
     [Fact]

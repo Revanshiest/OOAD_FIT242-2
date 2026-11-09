@@ -7,10 +7,10 @@ namespace GameServer.Routing;
 
 public sealed class PrimaryRouter : IRouter
 {
-    private static readonly Action<IReshardingTable, string, int> RouteCacher = CompileRouteCacher();
+    private static readonly Func<IReshardingTable, string, int, int> RouteCacher = CompileRouteCacher();
 
     private readonly IReshardingTable _reshardingTable;
-    private readonly List<IMessageQueueWriter<InboundMessage>> _writersByThreadId;
+    private readonly List<IMessageQueueWriter<InboundMessage>?> _writersByThreadId;
     private readonly GeneratedRouterDispatcher _hashDispatcher;
     private readonly object _syncLock = new();
 
@@ -25,7 +25,7 @@ public sealed class PrimaryRouter : IRouter
             ? 0
             : throw new ArgumentException("At least one worker writer is required.", nameof(writersByThreadId));
 
-        _writersByThreadId = writersByThreadId.ToList();
+        _writersByThreadId = writersByThreadId.Cast<IMessageQueueWriter<InboundMessage>?>().ToList();
         _reshardingTable = reshardingTable;
         _hashDispatcher = new GeneratedRouterDispatcher(writersByThreadId);
     }
@@ -48,20 +48,20 @@ public sealed class PrimaryRouter : IRouter
 
     public void RegisterWorker(int threadId, IMessageQueueWriter<InboundMessage> writer)
     {
+        ArgumentOutOfRangeException.ThrowIfNegative(threadId);
         ArgumentNullException.ThrowIfNull(writer);
 
         lock (_syncLock)
         {
             while (_writersByThreadId.Count <= threadId)
             {
-                _writersByThreadId.Add(null!);
+                _writersByThreadId.Add(null);
             }
 
             _writersByThreadId[threadId] = writer;
 
-            var activeWriters = _writersByThreadId.Where(writer => writer is not null).ToList();
-            _hashDispatcher.UpdateWriters(activeWriters);
             _reshardingTable.UpdateThreadCount(_writersByThreadId.Count);
+            UpdateActiveWriters();
         }
     }
 
@@ -72,31 +72,37 @@ public sealed class PrimaryRouter : IRouter
             var isValidThread = threadId >= 0 && threadId < _writersByThreadId.Count;
             while (isValidThread)
             {
-                _writersByThreadId[threadId] = null!;
+                _writersByThreadId[threadId] = null;
 
-                var activeWriters = _writersByThreadId.Where(writer => writer is not null).ToList();
-                _ = activeWriters.Count > 0 && UpdateActiveWriters(activeWriters);
+                UpdateActiveWriters();
                 _reshardingTable.RemoveRoutesForThread(threadId);
                 break;
             }
         }
     }
 
-    private bool UpdateActiveWriters(IReadOnlyList<IMessageQueueWriter<InboundMessage>> activeWriters)
+    private void UpdateActiveWriters()
     {
-        _hashDispatcher.UpdateWriters(activeWriters);
-        return true;
+        var activeTargets = _writersByThreadId
+            .Select((writer, threadId) => (writer, threadId))
+            .Where(entry => entry.writer is not null)
+            .Select(entry => new RouteTarget(entry.threadId, entry.writer!))
+            .ToArray();
+        _hashDispatcher.UpdateTargets(activeTargets);
     }
 
     public RouteTarget ResolveTarget(int routingKey, string gameId)
     {
-        var overrideId = _reshardingTable.ResolveRoute(gameId) ?? -1;
-        var target = _hashDispatcher.Dispatch(routingKey, overrideId);
-        RouteCacher(_reshardingTable, gameId, target.ThreadId);
-        return target;
+        lock (_syncLock)
+        {
+            var overrideId = _reshardingTable.ResolveRoute(gameId) ?? -1;
+            var target = _hashDispatcher.Dispatch(routingKey, overrideId);
+            var chosenThreadId = RouteCacher(_reshardingTable, gameId, target.ThreadId);
+            return _hashDispatcher.Dispatch(routingKey, chosenThreadId);
+        }
     }
 
-    private static Action<IReshardingTable, string, int> CompileRouteCacher()
+    private static Func<IReshardingTable, string, int, int> CompileRouteCacher()
     {
         var tableParam = Expression.Parameter(typeof(IReshardingTable), "table");
         var gameIdParam = Expression.Parameter(typeof(string), "gameId");
@@ -108,11 +114,11 @@ public sealed class PrimaryRouter : IRouter
         var isInvalidId = Expression.Call(isNullOrWhiteSpaceMethod, gameIdParam);
 
         var setRouteMethod = typeof(IReshardingTable).GetMethod(
-            nameof(IReshardingTable.SetRoute),
+            nameof(IReshardingTable.GetOrAddRoute),
             [typeof(string), typeof(int)])!;
         var callSetRoute = Expression.Call(tableParam, setRouteMethod, gameIdParam, threadIdParam);
 
-        var body = Expression.IfThen(Expression.Not(isInvalidId), callSetRoute);
-        return Expression.Lambda<Action<IReshardingTable, string, int>>(body, tableParam, gameIdParam, threadIdParam).Compile();
+        var body = Expression.Condition(isInvalidId, threadIdParam, callSetRoute);
+        return Expression.Lambda<Func<IReshardingTable, string, int, int>>(body, tableParam, gameIdParam, threadIdParam).Compile();
     }
 }

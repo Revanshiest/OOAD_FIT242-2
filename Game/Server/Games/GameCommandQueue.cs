@@ -15,7 +15,11 @@ public sealed class GameCommandQueue : IGameCommandQueue
             command = ServerCommandNames.Move,
             itemId = ((MoveGameItemCommand)command).ItemId
         }),
-        [typeof(SuspendGameCommand)] = _ => JsonSerializer.Serialize(new { command = ServerCommandNames.Suspend }),
+        [typeof(SuspendGameCommand)] = command => JsonSerializer.Serialize(new
+        {
+            command = ServerCommandNames.Suspend,
+            resumeRequested = ((SuspendGameCommand)command).ResumeRequested
+        }),
         [typeof(CreateGameItemMacroCommand)] = command => SerializeCreateItemCommand((CreateGameItemMacroCommand)command)
     };
 
@@ -59,6 +63,11 @@ public sealed class GameCommandQueue : IGameCommandQueue
     public IReadOnlyList<string> GetUnprocessedCommandsSnapshot()
     {
         return _commands.Select(SerializeCommand).ToArray();
+    }
+
+    internal bool TryResumePendingSuspension()
+    {
+        return _commands.OfType<SuspendGameCommand>().Any(command => command.TryRequestResume());
     }
 
     private static string SerializeCommand(ICommand command)

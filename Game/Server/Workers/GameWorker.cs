@@ -18,6 +18,7 @@ public sealed record WorkerCycleResult(
 
 public sealed class GameWorker : IGameWorker
 {
+    private const string ControlCommandPrefix = "Server.";
     private static readonly TimeSpan ProxyTtl = TimeSpan.FromSeconds(5);
     private readonly int _threadId;
     private readonly IMessageQueueReader<InboundMessage> _inputQueue;
@@ -100,16 +101,26 @@ public sealed class GameWorker : IGameWorker
 
         foreach (var customControlHandler in customControlHandlers ?? Enumerable.Empty<KeyValuePair<string, Func<InboundMessage, bool>>>())
         {
+            ValidateControlCommandName(customControlHandler.Key);
             _controlHandlers[customControlHandler.Key] = customControlHandler.Value;
         }
     }
 
     public void RegisterControlHandler(string commandName, Func<InboundMessage, bool> handler)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(commandName);
+        ValidateControlCommandName(commandName);
         ArgumentNullException.ThrowIfNull(handler);
 
         _controlHandlers[commandName] = handler;
+    }
+
+    private static void ValidateControlCommandName(string commandName)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(commandName);
+        if (!commandName.StartsWith(ControlCommandPrefix, StringComparison.Ordinal))
+        {
+            throw new ArgumentException("Control command names must use the Server. prefix.", nameof(commandName));
+        }
     }
 
     public int ThreadId => _threadId;
@@ -148,6 +159,11 @@ public sealed class GameWorker : IGameWorker
 
         var scheduleOutcome = _scheduler.ScheduleCycle(currentTime);
 
+        foreach (var gameId in scheduleOutcome.TerminatedGameIds)
+        {
+            _secondaryRouter.RemoveRecipient(gameId);
+        }
+
         return new WorkerCycleResult(
             routedCount,
             rejectedCount,
@@ -168,6 +184,11 @@ public sealed class GameWorker : IGameWorker
 
     private static Func<InboundMessage, bool>? TryResolveDynamicControlHandler(string commandName)
     {
+        if (!commandName.StartsWith(ControlCommandPrefix, StringComparison.Ordinal))
+        {
+            return null;
+        }
+
         try
         {
             return Ioc.Resolve<Func<InboundMessage, bool>>($"Server.ControlHandler.{commandName}");
@@ -198,15 +219,16 @@ public sealed class GameWorker : IGameWorker
 
     private bool ResumeGame(Game targetGame)
     {
-        _ = targetGame.IsAwaitingExternalEvent && ResumeTargetGame(targetGame);
-        targetGame.CommandQueue.Enqueue(new EmptyCommand());
-        _scheduler.NotifyCommandsQueued(targetGame);
-        return true;
-    }
+        if (targetGame.IsAwaitingExternalEvent)
+        {
+            targetGame.ResumeFromExternalEvent();
+        }
+        else
+        {
+            targetGame.CommandQueue.TryResumePendingSuspension();
+        }
 
-    private static bool ResumeTargetGame(Game targetGame)
-    {
-        targetGame.ResumeFromExternalEvent();
+        _scheduler.NotifyCommandsQueued(targetGame);
         return true;
     }
 
@@ -371,9 +393,8 @@ public sealed class GameWorker : IGameWorker
 
     private void SendMigrateInMessage(InboundMessage migrateInMessage, int targetThreadId, string gameId)
     {
-        UnregisterGame(gameId, GameTerminationReason.GameTransferred);
-
         var targetWriter = _supportServices.TransitResolver.ResolveWriter(targetThreadId);
+        UnregisterGame(gameId, GameTerminationReason.GameTransferred);
         _secondaryRouter.RegisterRecipient(gameId, new GameProxy(gameId, targetWriter, _supportServices.OverflowSink));
 
         var written = targetWriter.TryWrite(migrateInMessage);

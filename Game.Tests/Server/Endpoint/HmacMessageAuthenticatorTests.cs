@@ -139,6 +139,28 @@ public class HmacMessageAuthenticatorTests
     }
 
     [Fact]
+    public void IsAuthenticated_RejectsSignatureReusedWithDifferentMessageId()
+    {
+        var authenticator = new HmacMessageAuthenticator(SigningSecret, _timeProvider);
+        var original = CreateMessage() with { MessageId = "first" };
+        var signed = original with { AuthToken = authenticator.Sign(original) };
+
+        Assert.True(authenticator.IsAuthenticated(signed));
+        Assert.False(authenticator.IsAuthenticated(signed with { MessageId = "second" }));
+    }
+
+    [Fact]
+    public void IsAuthenticated_RejectsTimestampThatWouldOverflowAgeCalculation()
+    {
+        var authenticator = new HmacMessageAuthenticator(SigningSecret, _timeProvider);
+        var timestamp = unchecked(TestTimestamp.ToUnixTimeSeconds() - long.MinValue);
+
+        Assert.False(authenticator.IsAuthenticated(CreateMessage($"{timestamp}.00")));
+        Assert.False(authenticator.IsAuthenticated(CreateMessage($"{long.MinValue}.00")));
+        Assert.False(authenticator.IsAuthenticated(CreateMessage($"{long.MaxValue}.00")));
+    }
+
+    [Fact]
     public void Constructor_ThrowsArgumentException_WhenSecretIsMissing()
     {
         Assert.Throws<ArgumentException>(() => new HmacMessageAuthenticator("  ", _timeProvider));

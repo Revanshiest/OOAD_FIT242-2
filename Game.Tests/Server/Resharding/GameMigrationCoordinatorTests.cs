@@ -9,6 +9,29 @@ namespace Game.Tests.Server.Resharding;
 public class GameMigrationCoordinatorTests
 {
     [Fact]
+    public void Migration_WhenTargetIsMissing_PreservesSourceGame()
+    {
+        var now = DateTimeOffset.UtcNow;
+        var queue = new BoundedMessageQueue<InboundMessage>(16);
+        var settings = GameWorkerSettings.CreateDefault();
+        var scheduler = new PriorityRoundRobinScheduler(settings, new CommandRateLimiter(16, 64), NullGameTerminationObserver.Instance);
+        var services = new GameWorkerSupportServices(new JsonServerSnapshotCodec(),
+            new TestTransitResolver(new Dictionary<int, IMessageQueueWriter<InboundMessage>>()),
+            new RecordingOverflowSink(), new InMemorySnapshotStore());
+        var worker = new GameWorker(queue, scheduler, new JsonServerCommandDeserializer(TimeProvider.System),
+            new DefaultGameFactory(), settings, services);
+        queue.TryWrite(new InboundMessage(0, "game-1", "token", ServerCommandNames.CreateItem,
+            """{"itemId":"ship1","type":"Ship","position":[1,2],"speed":[3,4]}"""));
+        worker.ExecuteCycle(now);
+        queue.TryWrite(new InboundMessage(0, "game-1", "system", ServerCommandNames.MigrateOut,
+            """{"targetThreadId":1}"""));
+
+        worker.ExecuteCycle(now.AddSeconds(1));
+
+        Assert.True(scheduler.FindGame("game-1")?.Scope.Contains("ship1"));
+    }
+
+    [Fact]
     public void BeginThreadMigration_UpdatesReshardingTable_AndPostsMigrateOutToSourceWorker()
     {
         var reshardingTable = new ReshardingTable(2);
@@ -29,12 +52,13 @@ public class GameMigrationCoordinatorTests
     [Fact]
     public void BeginThreadMigration_ThrowsInvalidOperationException_WhenSourceWorkerRejectsPosting()
     {
-        var migrationCoordinator = new GameMigrationCoordinator(
-            new ReshardingTable(2),
-            new RejectingMessagePoster());
+        var routes = new ReshardingTable(2);
+        routes.SetRoute("game-1", 0);
+        var migrationCoordinator = new GameMigrationCoordinator(routes, new RejectingMessagePoster());
 
         Assert.Throws<InvalidOperationException>(() =>
             migrationCoordinator.BeginThreadMigration(new GameMigrationRequest("game-1", 0, 1)));
+        Assert.Equal(0, routes.ResolveRoute("game-1"));
     }
 
     [Fact]

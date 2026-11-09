@@ -103,6 +103,53 @@ public class PrimaryRouterTests
     }
 
     [Fact]
+    public void UnregisterWorker_PreservesRemainingWorkerIdsAndOverrides()
+    {
+        var table = new ReshardingTable(2);
+        var router = new PrimaryRouter(_recordingWriters.ToList(), table);
+        router.UnregisterWorker(0);
+
+        var target = router.ResolveTarget(0, "game-a");
+        Assert.Equal(1, target.ThreadId);
+        Assert.Same(_recordingWriters[1], target.Writer);
+        Assert.Equal(1, table.ResolveRoute("game-a"));
+
+        var third = new RecordingMessageWriter();
+        router.RegisterWorker(2, third);
+        var cached = router.ResolveTarget(1, "game-a");
+        Assert.Equal(1, cached.ThreadId);
+        Assert.Same(_recordingWriters[1], cached.Writer);
+        Assert.Equal(2, router.ResolveTarget(1, "game-b").ThreadId);
+    }
+
+    [Fact]
+    public void UnregisterLastWorker_RejectsRoutingUntilWorkerIsRegistered()
+    {
+        var writer = new RecordingMessageWriter();
+        var router = new PrimaryRouter([writer], new ReshardingTable(1));
+        router.UnregisterWorker(0);
+
+        Assert.Equal(0, router.WorkerCount);
+        Assert.Throws<NoWorkersAvailableException>(() => router.ResolveTarget(0, "game"));
+
+        var replacement = new RecordingMessageWriter();
+        router.RegisterWorker(2, replacement);
+        var target = router.ResolveTarget(0, "game");
+        Assert.Equal(2, target.ThreadId);
+        Assert.Same(replacement, target.Writer);
+    }
+
+    [Fact]
+    public void ResolveTarget_ConcurrentFirstRequestsKeepOneGameOnOneWorker()
+    {
+        var router = CreateRouter();
+        var targets = new RouteTarget[100];
+        Parallel.For(0, targets.Length, index => targets[index] = router.ResolveTarget(index, "game"));
+
+        Assert.All(targets, target => Assert.Equal(targets[0].ThreadId, target.ThreadId));
+    }
+
+    [Fact]
     public void PrimaryRouter_Create_ResolvesViaServerRouterCreateStrategy_WhenRegisteredInIoC()
     {
         new InitCommand().Execute();
@@ -164,6 +211,11 @@ public class PrimaryRouterTests
 
         public void UpdateThreadCount(int threadCount) { }
         public void SetRoute(string gameId, int threadId) => SetRouteCalled = true;
+        public int GetOrAddRoute(string gameId, int threadId)
+        {
+            SetRoute(gameId, threadId);
+            return threadId;
+        }
         public void RemoveRoute(string gameId) { }
         public void RemoveRoutesForThread(int threadId) { }
         public int? ResolveRoute(string gameId)
